@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Main where
 
+import Control.Exception (handle, SomeException)
 import Control.Monad (liftM)
 import Control.Monad.Reader
 import System.Directory (doesDirectoryExist, doesFileExist, getDirectoryContents)
@@ -31,9 +32,19 @@ getFiles = do
 filterDirEntries :: [FilePath] -> [FilePath]
 filterDirEntries = filter (not . flip elem [".", ".."])
 
+nothingHandler :: SomeException -> IO (Maybe a)
+nothingHandler _ = return Nothing
+
+safeGetDirContents :: Dir -> IO (Maybe [FilePath])
+safeGetDirContents (Dir dir) = handle nothingHandler $
+  Just `liftM` getDirectoryContents dir
+
 getFilteredDirContents :: Dir -> IO [FilePath]
-getFilteredDirContents (Dir dir) =
-  (map (dir </>) . filterDirEntries) `liftM` getDirectoryContents dir
+getFilteredDirContents (Dir dir) = do
+  maybeEntries <- safeGetDirContents $ Dir dir
+  case maybeEntries of
+    Nothing -> return []
+    Just files -> return $ map (dir </>) $ filterDirEntries files
   
 partitionFileEntries :: [FilePath] -> IO ([Dir], [File])
 partitionFileEntries entries =

@@ -18,6 +18,7 @@ executable ymrefiler
   main-is:             main.hs
   build-depends:       base >= 4
     , mtl
+    , filepath
     , directory
 
--- vim: et sts=4 ts=4
+-- vim: et sts=4 ts=4 sw=4
