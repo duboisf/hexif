@@ -16,6 +16,7 @@ cabal-version:       >=1.8
 
 executable ymrefiler
   main-is:             main.hs
+  ghc-options:         -W -Werror
   build-depends:       base >= 4
     , mtl
     , filepath
