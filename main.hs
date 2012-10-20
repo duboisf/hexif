@@ -2,11 +2,10 @@
 module Main where
 
 import Control.Exception (handle, SomeException)
-import Control.Monad (liftM)
 import Control.Monad.Reader
 import System.Directory (doesDirectoryExist, doesFileExist, getDirectoryContents)
 import System.Environment (getArgs)
-import System.Exit (exitFailure, exitSuccess)
+import System.Exit (exitFailure)
 import System.FilePath ((</>))
 
 data File = File FilePath deriving Show
@@ -92,4 +91,4 @@ main = do
     True -> do
       let appConfig = AppConfig (Dir srcDir) (Dir ".")
       runApp getFiles appConfig >>= mapM_ print
---    False -> exitFailure
+    False -> exitFailure
