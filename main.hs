@@ -5,6 +5,8 @@ import Control.Exception (handle, SomeException)
 import Control.Monad (liftM)
 import Control.Monad.Reader
 import System.Directory (doesDirectoryExist, doesFileExist, getDirectoryContents)
+import System.Environment (getArgs)
+import System.Exit (exitFailure, exitSuccess)
 import System.FilePath ((</>))
 
 data File = File FilePath deriving Show
@@ -83,4 +85,11 @@ getAllFilesRecursively dir =
 --   copy f to destFolder
 
 main :: IO ()
-main = putStrLn "Hullo, world"
+main = do
+  srcDir <- head `liftM` getArgs
+  exists <- doesDirectoryExist srcDir
+  case exists of
+    True -> do
+      let appConfig = AppConfig (Dir srcDir) (Dir ".")
+      runApp getFiles appConfig >>= mapM_ print
+--    False -> exitFailure
