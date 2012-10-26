@@ -3,6 +3,9 @@ module Main where
 
 import Control.Exception (handle, SomeException)
 import Control.Monad.Reader
+import Data.Binary.Get (getWord32be, runGet)
+import qualified Data.ByteString.Lazy as BSL
+import Numeric (showHex)
 import System.Directory (doesDirectoryExist, doesFileExist, getDirectoryContents)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -91,4 +94,9 @@ main = do
     True -> do
       let appConfig = AppConfig (Dir srcDir) (Dir ".")
       runApp getFiles appConfig >>= mapM_ print
+      contents <- BSL.readFile "./IMG_2845.JPG"
+      let result = showHex (runGet getWord32be contents) ""
+      case result of
+        "ffd8ffe1" -> putStrLn "Success"
+        _ -> exitFailure
     False -> exitFailure
