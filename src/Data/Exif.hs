@@ -1,7 +1,6 @@
 module Data.Exif where
 
 import Data.Binary.Get (Get, getWord16be)
-import Data.List (intercalate)
 import Numeric (showHex)
 
 satisfy :: (Show a, Eq a, Integral a) => String -> a -> a -> Either String a
@@ -12,7 +11,7 @@ satisfy desc expected actual =
   where
     msgList = ["Expected", desc, expectedString, "got", showHex' actual]
     expectedString = "(" ++ showHex' expected ++ ")"
-    errorMsg = intercalate " " msgList
+    errorMsg = unwords msgList
     showHex' :: (Integral a, Show a) => a -> String
     showHex' number = "0x" ++ showHex number ""
 

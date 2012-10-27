@@ -25,7 +25,7 @@ newtype App a = App {
   } deriving (Monad, MonadIO, MonadReader AppConfig)
 
 runApp :: App a -> AppConfig -> IO a
-runApp app config = runReaderT (runA app) config
+runApp app = runReaderT (runA app)
 
 -- get list of files from source folder
 getFiles :: App [File]
@@ -62,9 +62,7 @@ partitionFileEntries entries =
         then part entries (Dir entry : dirs) files
         else do
           isFile <- doesFileExist entry 
-          if isFile
-            then part entries dirs (File entry : files)
-            else part entries dirs files
+          part entries dirs (if isFile then File entry : files else files)
 
 getPartitionedDirContents :: Dir -> IO ([Dir], [File])
 getPartitionedDirContents dir =
@@ -90,8 +88,8 @@ main :: IO ()
 main = do
   srcDir <- head `liftM` getArgs
   exists <- doesDirectoryExist srcDir
-  case exists of
-    True -> do
+  if exists
+    then do
       let appConfig = AppConfig (Dir srcDir) (Dir ".")
       runApp getFiles appConfig >>= mapM_ print
       contents <- BSL.readFile "./IMG_2845.JPG"
@@ -99,5 +97,5 @@ main = do
       case result of
         Left msg -> putStrLn msg >> exitFailure
         Right () -> putStrLn "Success"
-    False -> putStrLn (srcDir ++ " isn't a folder") >> exitFailure
+    else putStrLn (srcDir ++ " isn't a folder") >> exitFailure
 
