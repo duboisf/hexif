@@ -5,7 +5,7 @@ import Control.Exception (handle, SomeException)
 import Control.Monad.Reader
 import Data.Binary.Get (runGet)
 import qualified Data.ByteString.Lazy as BSL
-import Data.Exif (parseHeader)
+import Data.Exif (parseSOI)
 import System.Directory (doesDirectoryExist, doesFileExist, getDirectoryContents)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -95,7 +95,7 @@ main = do
       let appConfig = AppConfig (Dir srcDir) (Dir ".")
       runApp getFiles appConfig >>= mapM_ print
       contents <- BSL.readFile "./IMG_2845.JPG"
-      let result = runGet parseHeader contents
+      let result = runGet parseSOI contents
       case result of
         Left msg -> putStrLn msg >> exitFailure
         Right () -> putStrLn "Success"

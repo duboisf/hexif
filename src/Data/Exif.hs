@@ -4,22 +4,25 @@ import Data.Binary.Get (Get, getWord16be)
 import Data.List (intercalate)
 import Numeric (showHex)
 
-satisfy :: (Show a, Eq a) => a -> a -> Get (Either String a)
-satisfy expected actual =
+satisfy :: (Show a, Eq a, Integral a) => String -> a -> a -> Either String a
+satisfy desc expected actual =
   if actual == expected
-    then return $ Right actual
-    else return $ Left errorMsg
+    then Right actual
+    else Left errorMsg
   where
-    msgList = ["Expected", show expected, ", got",  show actual] 
+    msgList = ["Expected", desc, expectedString, "got", showHex' actual]
+    expectedString = "(" ++ showHex' expected ++ ")"
     errorMsg = intercalate " " msgList
+    showHex' :: (Integral a, Show a) => a -> String
+    showHex' number = "0x" ++ showHex number ""
 
-parseHeader :: Get (Either String ())
-parseHeader = do
-  soi <- getWord16be
-  if soi == 0xFFD8
-    then return $ Right ()
-    else return $ Left $ "Expected JPEG magic number, read 0x" ++ showHex soi ""
+satisfy_ :: (Show a, Eq a, Integral a) => String -> a -> a -> Either String ()
+satisfy_ desc expected actual =
+  case satisfy desc expected actual of
+    Right _ -> Right ()
+    Left msg -> Left msg
 
---hex :: a -> String
---hex number = "0x" ++ showHex number ""
-  
+parseSOI :: Get (Either String ())
+parseSOI =
+  return . satisfy_ "JPEG magic number" 0xFFD8 =<< getWord16be
+
