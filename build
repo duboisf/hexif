@@ -1,0 +1,30 @@
+#!/bin/bash
+
+which inotifywait > /dev/null 2>&1
+if (( $? != 0 )); then
+    echo >&2 <<EOF
+This script requires the 'nofitywait' executable.
+
+It wasn't found on the PATH.
+
+On debian and derivatives it can be installed with:
+
+apt-get install inotify-tools
+EOF
+fi
+
+while true; do
+    RESULT=`inotifywait -r src -q`
+    echo "inotify: $RESULT"
+    echo $RESULT | grep '\.hs$' | grep -P 'CREATE|MODIFY|CLOSE_WRITE'
+    if (( $? == 0 )); then
+        CABAL_OUTPUT=`cabal build 2>&1`
+        if (( $? == 0 )); then
+            echo "[0;32m${CABAL_OUTPUT}[0m"
+        else
+            echo "[0;31m${CABAL_OUTPUT}[0m"
+        fi
+    fi
+done
+
+# vim: sw=4 sts=4 ts=4 et
