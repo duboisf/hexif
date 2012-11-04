@@ -5,7 +5,7 @@ module Main where
 import Control.Exception (handle, SomeException)
 import Control.Monad.Reader
 import qualified Data.ByteString.Lazy as BSL
-import Data.Exif (runBParser, parseSOI)
+import Data.Exif (parseExif)
 import System.Directory (doesDirectoryExist, doesFileExist, getDirectoryContents)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -91,11 +91,11 @@ main = do
   if exists
     then do
       let appConfig = AppConfig (Dir srcDir) (Dir ".")
-      runApp getFiles appConfig >>= mapM_ print
+      runApp getFiles appConfig -- >>= mapM_ print
       contents <- BSL.readFile "./IMG_2845.JPG"
-      let result = runBParser parseSOI contents
+      let result = parseExif contents
       case result of
         Left err -> print err >> exitFailure
-        Right _ -> putStrLn "Success"
+        Right w -> putStrLn "Success" >> print w
     else putStrLn (srcDir ++ " isn't a folder") >> exitFailure
 
