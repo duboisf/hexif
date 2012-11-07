@@ -3,7 +3,7 @@
 which inotifywait > /dev/null 2>&1
 if (( $? != 0 )); then
     echo >&2 <<EOF
-This script requires the 'nofitywait' executable.
+This script requires the 'inofitywait' executable.
 
 It wasn't found on the PATH.
 
