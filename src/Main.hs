@@ -96,6 +96,6 @@ main = do
       let result = parseExif contents
       case result of
         Left err -> print err >> exitFailure
-        Right w -> putStrLn "Success" >> print w
+        Right w -> putStrLn "Success" >> mapM_ print w
     else putStrLn (srcDir ++ " isn't a folder") >> exitFailure
 

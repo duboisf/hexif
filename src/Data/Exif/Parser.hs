@@ -2,19 +2,23 @@
 
 module Data.Exif.Parser where
 
-import Control.Monad (void)
+import Control.Monad (liftM, void)
 import Control.Monad.Error (Error(..), ErrorT, lift, runErrorT, throwError)
 import Control.Monad.Error.Class (MonadError)
-import Data.Binary.Get (Get, getWord16be, getWord16le, getWord32be, getWord32le, runGet)
+import Data.Binary.Get (bytesRead, Get, getWord8, getWord16be, getWord16le, getWord32be, getWord32le, runGet)
 import Data.ByteString.Lazy (ByteString)
 import Data.Exif.Types
-import Data.Word (Word16, Word32)
+import Data.Int (Int64)
+import Data.Word (Word8, Word16, Word32)
 import Numeric (showHex)
 
-data ParserError = Unsatisfied String
-                 | ParserError
-                 | UndefinedEndianness String
-                   deriving (Show)
+data ParserError
+  = Unsatisfied String
+  | ParserError
+  | InvalidExifTag Int64 Word16
+  | InvalidExifType Int64 Word16
+  | UndefinedEndianness String
+    deriving (Show)
 
 instance Error ParserError where
   noMsg = ParserError
@@ -46,7 +50,10 @@ satisfy_ desc expected actual =
 
 -- liftP is to lift the Get monad into our Parser (liftP => lift parser)
 liftP :: Get a -> Parser a
-liftP m = Parser (lift m)
+liftP m = Parser $ lift m
+
+getW8 :: Parser Word8
+getW8 = liftP getWord8
 
 getW16be :: Parser Word16
 getW16be = liftP getWord16be
@@ -75,18 +82,59 @@ pByteOrder = do
 p42 :: Parser ()
 p42 = satisfy_ "42" 0x002A =<< getW16le
 
+-- SOI: Start Of Image
 pSOI :: Parser ()
 pSOI = do
   satisfy_ "JPEG magic number" 0xFFD8 =<< getW16be
-  satisfy_ "SOI suffix" 0xFFE1 =<< getW16be
-  getW16be
-  satisfy_ "Exif string" 0x45786966 =<< getW32be
+
+-- Used to abstract result type so that when testing I don't need to change 15
+-- method signatures
+type TempResult = [IFDField]
+
+pApp1 :: Parser TempResult
+pApp1 = do
+  satisfy_ "APP1 marker" 0xFFE1 =<< getW16be
+  app1Length <- getW16le
+  satisfy_ "Exif identifier code" 0x45786966 =<< getW32be
   satisfy_ "Byte order prefix" 0x00 =<< getW16le
+  tiffHeader <- pTIFFHeader
+  pIFD0
+
+pIFD0 :: Parser TempResult
+pIFD0 = do
+  nbFields <- getW16le
+  repeat (fromIntegral nbFields) []
+  where
+    repeat :: Int -> [IFDField] -> Parser [IFDField]
+    repeat 0 res = return $ reverse res
+    repeat n cum = do
+      field <- pField
+      repeat (n - 1) (field : cum)
+
+pField :: Parser IFDField
+pField = do
+  tag <- word2Tag `liftM` getW16le
+  rawType <- getW16le
+  exifType <- case word2ExifType rawType of
+    Nothing -> do
+      bytesRead' <- liftP bytesRead
+      throwError $ InvalidExifType bytesRead' rawType
+    Just y -> return y
+  count <- getW32le
+  valueOffset <- getW32le
+  return $ IFDField tag exifType count valueOffset
+
+pTIFFHeader :: Parser TIFFHeader
+pTIFFHeader = do
+  endianness <- pByteOrder
+  p42
+  offset <- pIFDOffset
+  return $ TIFFHeader endianness offset
 
 pIFDOffset :: Parser Int
 pIFDOffset = do
   rawWord <- getW32le
   return $ fromIntegral $ toInteger (rawWord - 8)
 
-parseExif :: ByteString -> Either ParserError ()
-parseExif = runParser (pSOI >> pByteOrder >> void p42)
+parseExif :: ByteString -> Either ParserError TempResult
+parseExif = runParser (pSOI >> pApp1)
