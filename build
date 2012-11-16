@@ -2,7 +2,7 @@
 
 which inotifywait > /dev/null 2>&1
 if (( $? != 0 )); then
-    echo >&2 <<EOF
+    cat >&2 <<EOF
 This script requires the 'inofitywait' executable.
 
 It wasn't found on the PATH.
@@ -11,6 +11,7 @@ On debian and derivatives it can be installed with:
 
 apt-get install inotify-tools
 EOF
+    exit 1
 fi
 
 cabal build
