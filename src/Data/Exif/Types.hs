@@ -6,15 +6,18 @@ import Data.Word (Word16, Word32)
 data Endianness = LittleEndian | BigEndian deriving (Show)
 
 data TIFFHeader = TIFFHeader {
-    thByteOrder :: Endianness
+    thOffset :: Int
+  , thByteOrder :: Endianness
   , thIFDOffset :: Int
 } deriving (Show)
 
+-- IFD (Image File Directory) Field
 data IFDField = IFDField {
     ifTag :: Tag
   , ifType :: ExifType
   , ifCount :: Word32
   , ifOffset :: Word32
+--  , ifValue :: Maybe
 } deriving Show
 
 type RatioW32 = Ratio Word32
@@ -55,7 +58,7 @@ data Tag
   | TArtist
   | TCopyright
   -- Tags relating to Exif
-  | TExif
+  | TExifIFDPointer
   | TGPS
   | TInteroperability
   -- Private and unknow tags
@@ -101,7 +104,7 @@ word2Tag rawWord =
     0x013B -> TArtist
     0x8298 -> TCopyright
     -- Tags relating to Exif
-    0x8769 -> TExif
+    0x8769 -> TExifIFDPointer
     0x8825 -> TGPS
     0xA005 -> TInteroperability
     -- Handle unknow and private tags
