@@ -1,3 +1,7 @@
 :set prompt "ghci> "
 :cd src
 :l Data.Exif.Parser
+import Data.ByteString.Lazy as BSL
+pic <- BSL.readFile "../IMG_2845.JPG"
+let Right (header, fields, endPos) = parseExif pic
+mapM_ print fields

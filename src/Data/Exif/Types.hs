@@ -1,7 +1,7 @@
 module Data.Exif.Types where
 
 import Data.Ratio (Ratio)
-import Data.Word (Word16, Word32)
+import Data.Word (Word8, Word16, Word32)
 
 data Endianness = LittleEndian | BigEndian deriving (Show)
 
@@ -14,10 +14,9 @@ data TIFFHeader = TIFFHeader {
 -- IFD (Image File Directory) Field
 data IFDField = IFDField {
     ifTag :: Tag
-  , ifType :: ExifType
+  , ifType :: Type
   , ifCount :: Word32
   , ifOffset :: Word32
---  , ifValue :: Maybe
 } deriving Show
 
 type RatioW32 = Ratio Word32
@@ -113,6 +112,112 @@ word2Tag rawWord =
         then TUnknownPrivateTag rawWord
         else TUnknownTag rawWord
 
+data ExifAttribute
+  {-
+   - TIFF Attributes used in Exif
+   -}
+  -- Image data structure
+  = ImageWidth Integer
+  | ImageLength Integer
+  | BitsPerSample Int Int Int
+  | Compression Int
+  | PhotometricInterpretation Int
+  | Orientation Int
+  | SamplesPerPixel Int
+  | PlanarConfiguration Int
+  | YCbCrSubSampling Int Int
+  | YCbCrPositioning Int
+  | XResolution Rational
+  | YResolution Rational
+  | ResolutionUnit Int
+  -- Recording offset
+  | StripOffsets Integer
+  | RowsPerStrip Integer
+  | StripByteCount [Integer]
+  | JPEGInterchangeFormat Integer
+  | JPEGInterchangeFormatLength Integer
+  -- Image data characteristics
+  | TransferFunction [Int]
+  | WhitePoint Rational Rational Rational
+  | PrimaryChromaticities [Rational]
+  | YCbCrCoefficients Rational Rational Rational
+  | ReferenceBlackWhite [Rational]
+  -- Other tags
+  | DateTime String
+  | ImageDescription String
+  | Make String
+  | Model String
+  | Software String
+  | Artist String
+  | Copyright String
+  {-
+   - Exif Attributes
+   -}
+  -- Version
+  | ExifVersion Word32
+  | FlashPixVersion Word32
+  -- Image data characteristics
+  | ColorSpace Int
+  | ComponentsConfiguration Word32
+  | CompressedBitsPerPixel Rational
+  | PixelXDimension Integer
+  | PixelYDimension Integer
+  -- User information
+  | MakerNote String
+  | UserComment String
+  -- Related file information
+  | RelatedSoundFile String
+  -- Date and time
+  | DateTimeOriginal String
+  | DateTimeDigitized String
+  | SubSecTime String
+  | SubSecTimeOriginal String
+  | SubSecTimeDigitized String
+  -- Picture-taking conditions
+  | ExposureTime Rational
+  | FNumber Rational
+  | ExposureProgram Int
+  | SpectralSensitivity String
+  | ISOSpeedRatings Int
+  | OECF Word32
+  | ShutterSpeedValue Rational
+  | ApertureValue Rational
+  | BrightnessValue Rational
+  | ExposureBiasValue Rational
+  | MaxApertureValue Rational
+  | SubjectDistance Rational
+  | MeteringMode Int
+  | LightSource Int
+  | Flash Int
+  | FocalLength Rational
+  | SubjectArea [Int]
+  | FlashEnergy Rational
+  | SpatialFrequencyResponse [Word8]
+  | FocalPlaneXResolution Rational
+  | FocalPlaneYResolution Rational
+  | FocalPlaneResolutionUnit Int
+  | SubjectLocation Int Int
+  | ExposureIndex Rational
+  | SensingMethod Int
+  | FileSource Word32
+  | SceneType Word32
+  | CFAPattern [Word8]
+  | CustomRenderer Int
+  | ExposureMode Int
+  | WhiteBalance Int
+  | DigitalZoomRatio Rational
+  | FocalLengthIn35mmFilm Int
+  | SceneCaptureType Int
+  | GainControl Rational
+  | Contrast Int
+  | Saturation Int
+  | Sharpness Int
+  | DeviceSettingsDescription [Word8]
+  | SubjectDistanceRange Int
+  -- Other
+  | ImageUniqueID String
+    deriving (Show)
+
 -- data TIFFTag =
 --                -- Tags relating to image data structure
 --                ImageWidth Word32
@@ -150,7 +255,7 @@ word2Tag rawWord =
 --              | Copyright String
 --                deriving (Show)
 
-data ExifType
+data Type
   = Byte
   | Ascii
   | Short
@@ -161,7 +266,7 @@ data ExifType
   | SRational
     deriving (Show)
 
-word2ExifType :: Word16 -> Maybe ExifType
+word2ExifType :: Word16 -> Maybe Type
 word2ExifType rawWord =
   case rawWord of
     1  -> Just Byte

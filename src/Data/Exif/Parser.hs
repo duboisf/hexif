@@ -67,8 +67,17 @@ getW32le = liftP G.getWord32le
 getW32be :: Parser Word32
 getW32be = liftP G.getWord32be
 
--- Here follows all our binary parsers for the Exif format.
--- All the parsing methods start with 'p'
+currentTiffOffset :: TIFFHeader -> Parser Int
+currentTiffOffset header = do
+  bytesRead' <- liftP G.bytesRead
+  return $ (fromInteger . toInteger) bytesRead' - (thOffset header)
+
+{-
+ - PARSERS
+ -
+ - Here follows all our binary parsers for the Exif format.
+ - All the parsing methods start with 'p'
+ -}
 
 pByteOrder :: Parser Endianness
 pByteOrder = do
