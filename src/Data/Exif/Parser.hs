@@ -97,9 +97,9 @@ pSOI = satisfy_ "JPEG magic number" 0xFFD8 =<< getW16be
 
 -- Used to abstract result type so that when testing I don't need to change 15
 -- method signatures
-type TempResult = (TIFFHeader, [IFDField], Int64)
+type TempResult = (TIFFHeader, [IFDFieldDef], Int64)
 
-pApp1 :: Parser (TIFFHeader, [IFDField])
+pApp1 :: Parser (TIFFHeader, [IFDFieldDef])
 pApp1 = do
   satisfy_ "APP1 marker" 0xFFE1 =<< getW16be
   app1Length <- getW16le
@@ -110,20 +110,20 @@ pApp1 = do
   (ifd0Fields, nextIFDOffset) <- pIFD0
   return (tiffHeader, ifd0Fields)
 
-pIFD0 :: Parser ([IFDField], Word16)
+pIFD0 :: Parser ([IFDFieldDef], Word16)
 pIFD0 = do
   nbFields <- getW16le
   fields <- repeat (fromIntegral nbFields) []
   nextIFDOffset <- getW16le
   return (fields, nextIFDOffset)
   where
-    repeat :: Int -> [IFDField] -> Parser [IFDField]
+    repeat :: Int -> [IFDFieldDef] -> Parser [IFDFieldDef]
     repeat 0 res = return $ reverse res
     repeat n cum = do
       field <- pField
       repeat (n - 1) (field : cum)
 
-pField :: Parser IFDField
+pField :: Parser IFDFieldDef
 pField = do
   tag <- word2Tag `liftM` getW16le
   rawType <- getW16le
@@ -132,9 +132,10 @@ pField = do
       bytesRead' <- liftP G.bytesRead
       throwError $ InvalidExifType bytesRead' rawType
     Just y -> return y
-  count <- getW32le
+  rawCount <- getW32le
+  let count = fromIntegral rawCount
   valueOffset <- getW32le
-  return $ IFDField tag exifType count valueOffset
+  return $ IFDFieldDef tag exifType count valueOffset
 
 pTIFFHeader :: Parser TIFFHeader
 pTIFFHeader = do

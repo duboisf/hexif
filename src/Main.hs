@@ -6,8 +6,11 @@ import Control.Exception (handle, SomeException)
 import Control.Monad.Reader
 import qualified Data.ByteString.Lazy as BSL
 import Data.Exif (parseExif)
+import Data.Exif.Types
+import Data.Char (toUpper)
+import Numeric (showHex)
 import System.Directory (doesDirectoryExist, doesFileExist, getDirectoryContents)
-import System.Environment (getArgs)
+import System.Environment (getArgs, getProgName)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
 
@@ -84,22 +87,44 @@ getAllFilesRecursively dir =
 --   if not exists destFolder, create it
 --   copy f to destFolder
 
+printUsage :: IO ()
+printUsage = do
+  prog <- getProgName
+  putStrLn $ "usage: " ++ prog ++ " DIR"
+
 main :: IO ()
 main = do
-  srcDir <- head `liftM` getArgs
-  exists <- doesDirectoryExist srcDir
-  if exists
+  args <- getArgs
+  if length args > 0
     then do
+      srcDir <- head `liftM` getArgs
+      exists <- doesDirectoryExist srcDir
+      if exists
+        then doWork srcDir
+        else putStrLn (srcDir ++ " isn't a folder") >> exitFailure
+    else printUsage
+
+  where
+    doWork :: String -> IO ()
+    doWork srcDir = do
       let appConfig = AppConfig (Dir srcDir) (Dir ".")
-      runApp getFiles appConfig -- >>= mapM_ print
-      contents <- BSL.readFile "./IMG_2845.JPG"
+      files <- runApp getFiles appConfig
+      contents <- BSL.readFile $ let File file = head files in file
       let result = parseExif contents
       case result of
         Left err -> print err >> exitFailure
         Right (header, fields, endPos) -> do
           putStrLn "Success"
-          print header
-          mapM_ print fields
-          putStrLn $ "End position: " ++ show endPos
-    else putStrLn (srcDir ++ " isn't a folder") >> exitFailure
+          forM_ (zip [1..] fields) $ \(n, field) -> do
+            print header
+            putStrLn "-----"
+            putStrLn $ "Field " ++ show n
+            printField field
+            putStrLn $ "End position: " ++ show endPos
 
+    printField field =
+      putStrLn $ 
+        "Tag: " ++ show (ifTag field) ++
+        "\nType: " ++ show (ifType field) ++
+        "\nCount: " ++ show (ifCount field) ++
+        "\nOffset: 0x" ++ map toUpper (showHex (ifOffset field) "")

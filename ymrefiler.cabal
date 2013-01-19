@@ -14,13 +14,15 @@ cabal-version:       >=1.8
 executable ymrefiler
   main-is:             Main.hs
   hs-source-dirs:      src
-  ghc-options:         -W -Werror
+  ghc-options:         -W
+--  ghc-options:         -W -Werror
   build-depends:
       base >= 4
-    , mtl
-    , filepath
-    , directory
     , binary
     , bytestring
+    , directory
+    , filepath
+    , mtl
+    , text
 
 -- vim: et sts=4 ts=4 sw=4

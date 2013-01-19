@@ -12,10 +12,10 @@ data TIFFHeader = TIFFHeader {
 } deriving (Show)
 
 -- IFD (Image File Directory) Field
-data IFDField = IFDField {
+data IFDFieldDef = IFDFieldDef {
     ifTag :: Tag
   , ifType :: Type
-  , ifCount :: Word32
+  , ifCount :: Int
   , ifOffset :: Word32
 } deriving Show
 
@@ -279,3 +279,14 @@ word2ExifType rawWord =
     10 -> Just SRational
     _  -> Nothing
 
+typeSize :: Type -> Int
+typeSize etype =
+  case etype of
+    Byte         -> 1
+    Ascii        -> 1
+    Short        -> 2
+    Long         -> 4
+    ExifRational -> 8
+    Undefined    -> 1
+    SLong        -> 4
+    SRational    -> 8
