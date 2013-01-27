@@ -3,6 +3,7 @@
 module Data.Exif.Parser where
 
 import Control.Monad (liftM, void)
+import Control.Monad.Writer.Lazy (runWriterT, WriterT)
 import Control.Monad.Error (Error(..), ErrorT, lift, runErrorT, throwError)
 import Control.Monad.Error.Class (MonadError)
 import qualified Data.Binary.Get as G
@@ -25,11 +26,11 @@ instance Error ParserError where
   strMsg = Unsatisfied
 
 newtype Parser a = Parser {
-  runP :: ErrorT ParserError G.Get a
+  runP :: ErrorT ParserError (WriterT [String] G.Get) a
 } deriving (Functor, Monad, MonadError ParserError)
 
-runParser :: Parser a -> ByteString -> Either ParserError a
-runParser parser = G.runGet (runErrorT (runP parser))
+runParser :: Parser a -> ByteString -> (Either ParserError a, [String])
+runParser parser = G.runGet (runWriterT (runErrorT (runP parser)))
 
 -- functions to simplify parsing expected bytes
 satisfy :: (Show a, Eq a, Integral a) => String -> a -> a -> Parser a
@@ -50,7 +51,7 @@ satisfy_ desc expected actual =
 
 -- liftP is to lift the Get monad into our Parser (liftP => lift parser)
 liftP :: G.Get a -> Parser a
-liftP m = Parser $ lift m
+liftP = Parser . lift . lift
 
 getW8 :: Parser Word8
 getW8 = liftP G.getWord8
@@ -113,18 +114,18 @@ pApp1 = do
 pIFD0 :: Parser ([IFDFieldDef], Word16)
 pIFD0 = do
   nbFields <- getW16le
-  fields <- repeat (fromIntegral nbFields) []
+  fieldDefs <- repeat (fromIntegral nbFields) []
   nextIFDOffset <- getW16le
-  return (fields, nextIFDOffset)
+  return (fieldDefs, nextIFDOffset)
   where
     repeat :: Int -> [IFDFieldDef] -> Parser [IFDFieldDef]
     repeat 0 res = return $ reverse res
     repeat n cum = do
-      field <- pField
+      field <- pFieldDef
       repeat (n - 1) (field : cum)
 
-pField :: Parser IFDFieldDef
-pField = do
+pFieldDef :: Parser IFDFieldDef
+pFieldDef = do
   tag <- word2Tag `liftM` getW16le
   rawType <- getW16le
   exifType <- case word2ExifType rawType of
@@ -150,7 +151,7 @@ pIFDOffset = do
   rawWord <- getW32le
   return $ fromIntegral $ toInteger (rawWord - 8)
 
-parseExif :: ByteString -> Either ParserError TempResult
+parseExif :: ByteString -> (Either ParserError TempResult, [String])
 parseExif = runParser $ do
   pSOI
   (header, fields) <- pApp1

@@ -129,7 +129,7 @@ data ExifAttribute
   | YCbCrPositioning Int
   | XResolution Rational
   | YResolution Rational
-  | ResolutionUnit Int
+  | ResolutionUnit ResolutionUnit
   -- Recording offset
   | StripOffsets Integer
   | RowsPerStrip Integer
@@ -217,6 +217,10 @@ data ExifAttribute
   -- Other
   | ImageUniqueID String
     deriving (Show)
+
+data ResolutionUnit = Centimeters
+                    | Inches
+                      deriving Show
 
 -- data TIFFTag =
 --                -- Tags relating to image data structure

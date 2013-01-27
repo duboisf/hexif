@@ -112,15 +112,17 @@ main = do
       contents <- BSL.readFile $ let File file = head files in file
       let result = parseExif contents
       case result of
-        Left err -> print err >> exitFailure
-        Right (header, fields, endPos) -> do
-          putStrLn "Success"
+        (Left err, logs) -> print err >> print logs >> exitFailure
+        (Right (header, fields, endPos), logs) -> do
+          print header
           forM_ (zip [1..] fields) $ \(n, field) -> do
-            print header
-            putStrLn "-----"
+            printLine
             putStrLn $ "Field " ++ show n
             printField field
-            putStrLn $ "End position: " ++ show endPos
+          printLine
+          putStrLn $ "End position: " ++ show endPos
+
+    printLine = putStrLn $ replicate 20 '-'
 
     printField field =
       putStrLn $ 
