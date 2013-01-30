@@ -12,12 +12,27 @@ data TIFFHeader = TIFFHeader {
 } deriving (Show)
 
 -- IFD (Image File Directory) Field
-data IFDFieldDef = IFDFieldDef {
+data RawIFDField = RawIFDField {
+    rifTag :: Tag
+  , rifType :: Type
+  , rifCount :: Int
+  , rifOffset :: Word32
+} deriving Show
+
+data IFDField = IFDField {
     ifTag :: Tag
   , ifType :: Type
   , ifCount :: Int
-  , ifOffset :: Word32
+  , ifValue :: ExifAttribute
 } deriving Show
+
+toIFDField :: RawIFDField -> ExifAttribute -> IFDField
+toIFDField rawField value =
+  IFDField
+    (rifTag rawField)
+    (rifType rawField)
+    (rifCount rawField)
+    value
 
 type RatioW32 = Ratio Word32
 

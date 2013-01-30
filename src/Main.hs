@@ -113,7 +113,7 @@ main = do
       let result = parseExif contents
       case result of
         (Left err, logs) -> print err >> print logs >> exitFailure
-        (Right (header, fields, endPos), logs) -> do
+        (Right (header, fields, endPos), _) -> do
           print header
           forM_ (zip [1..] fields) $ \(n, field) -> do
             printLine
@@ -124,9 +124,10 @@ main = do
 
     printLine = putStrLn $ replicate 20 '-'
 
+    printField :: RawIFDField -> IO ()
     printField field =
       putStrLn $ 
-        "Tag: " ++ show (ifTag field) ++
-        "\nType: " ++ show (ifType field) ++
-        "\nCount: " ++ show (ifCount field) ++
-        "\nOffset: 0x" ++ map toUpper (showHex (ifOffset field) "")
+        "Tag: " ++ show (rifTag field) ++
+        "\nType: " ++ show (rifType field) ++
+        "\nCount: " ++ show (rifCount field) ++
+        "\nOffset: 0x" ++ map toUpper (showHex (rifOffset field) "")

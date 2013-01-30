@@ -1,9 +1,13 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Data.Exif.Parser where
+module Data.Exif.Parser (
+    parseExif
+  , ParserResult
+  ) where
 
 import Control.Monad (liftM, void)
-import Control.Monad.Writer.Lazy (runWriterT, WriterT)
+import Control.Monad.Writer.Lazy (runWriterT, WriterT, tell)
+import Control.Monad.Writer.Class (MonadWriter)
 import Control.Monad.Error (Error(..), ErrorT, lift, runErrorT, throwError)
 import Control.Monad.Error.Class (MonadError)
 import qualified Data.Binary.Get as G
@@ -27,9 +31,11 @@ instance Error ParserError where
 
 newtype Parser a = Parser {
   runP :: ErrorT ParserError (WriterT [String] G.Get) a
-} deriving (Functor, Monad, MonadError ParserError)
+} deriving (Functor, Monad, MonadError ParserError, MonadWriter [String])
 
-runParser :: Parser a -> ByteString -> (Either ParserError a, [String])
+type ParserResult a = (Either ParserError a, [String])
+
+runParser :: Parser a -> ByteString -> ParserResult a
 runParser parser = G.runGet (runWriterT (runErrorT (runP parser)))
 
 -- functions to simplify parsing expected bytes
@@ -80,8 +86,8 @@ currentTiffOffset header = do
  - All the parsing methods start with 'p'
  -}
 
-pByteOrder :: Parser Endianness
-pByteOrder = do
+parseByteOrder :: Parser Endianness
+parseByteOrder = do
   rawWord <- getW16be
   case rawWord of
     0x4949 -> return LittleEndian
@@ -89,43 +95,53 @@ pByteOrder = do
     other -> throwError $ UndefinedEndianness $ showHex other ""
 
 -- Yup, we expect this following the Endianness in the header
-p42 :: Parser ()
-p42 = satisfy_ "42" 0x002A =<< getW16le
+parse42 :: Parser ()
+parse42 = satisfy_ "42" 0x002A =<< getW16le
 
 -- SOI: Start Of Image
-pSOI :: Parser ()
-pSOI = satisfy_ "JPEG magic number" 0xFFD8 =<< getW16be
+parseSOI :: Parser ()
+parseSOI = satisfy_ "JPEG magic number" 0xFFD8 =<< getW16be
 
 -- Used to abstract result type so that when testing I don't need to change 15
 -- method signatures
-type TempResult = (TIFFHeader, [IFDFieldDef], Int64)
+type TempResult = (TIFFHeader, [RawIFDField], Int64)
 
-pApp1 :: Parser (TIFFHeader, [IFDFieldDef])
-pApp1 = do
+parseApp1 :: Parser (TIFFHeader, [RawIFDField])
+parseApp1 = do
   satisfy_ "APP1 marker" 0xFFE1 =<< getW16be
   app1Length <- getW16le
   satisfy_ "Exif identifier code" 0x45786966 =<< getW32be
   satisfy_ "Byte order prefix" 0x00 =<< getW16le
-  tiffHeader <- pTIFFHeader
+  tiffHeader <- parseTIFFHeader
   liftP $ G.skip $ thIFDOffset tiffHeader
-  (ifd0Fields, nextIFDOffset) <- pIFD0
-  return (tiffHeader, ifd0Fields)
+  tell ["about to parse the 0th IFD"]
+  (raw0thIFDFields, nextIFDOffset) <- parse0thIFD
+  let nbFields = length raw0thIFDFields
+  tell [("finished parsing the 0th IFD, found " ++ show nbFields ++ " fields")]
+  return (tiffHeader, raw0thIFDFields)
 
-pIFD0 :: Parser ([IFDFieldDef], Word16)
-pIFD0 = do
+parse0thIFD :: Parser ([RawIFDField], Word16)
+parse0thIFD = do
   nbFields <- getW16le
-  fieldDefs <- repeat (fromIntegral nbFields) []
+  rawFields <- repeat (fromIntegral nbFields) []
   nextIFDOffset <- getW16le
-  return (fieldDefs, nextIFDOffset)
+  return (rawFields, nextIFDOffset)
   where
-    repeat :: Int -> [IFDFieldDef] -> Parser [IFDFieldDef]
+    repeat :: Int -> [RawIFDField] -> Parser [RawIFDField]
     repeat 0 res = return $ reverse res
     repeat n cum = do
-      field <- pFieldDef
+      field <- praseRawFieldDef
       repeat (n - 1) (field : cum)
 
-pFieldDef :: Parser IFDFieldDef
-pFieldDef = do
+{-
+ - This results in raw field definitions. The difference between a raw field
+ - def and a field def is that raw field defs contain an offset, which can
+ - possibly be the actual value of the field.  To determine if the offset is
+ - the actual value, the size of the value needs to be 4 bytes or less. The
+ - size of the value is the count (nb of values) times the size of each value.
+ -}
+praseRawFieldDef :: Parser RawIFDField
+praseRawFieldDef = do
   tag <- word2Tag `liftM` getW16le
   rawType <- getW16le
   exifType <- case word2ExifType rawType of
@@ -136,24 +152,28 @@ pFieldDef = do
   rawCount <- getW32le
   let count = fromIntegral rawCount
   valueOffset <- getW32le
-  return $ IFDFieldDef tag exifType count valueOffset
+  return $ RawIFDField tag exifType count valueOffset
 
-pTIFFHeader :: Parser TIFFHeader
-pTIFFHeader = do
+parseTIFFHeader :: Parser TIFFHeader
+parseTIFFHeader = do
   tiffHeaderOfset <- (fromIntegral . toInteger) `liftM` liftP G.bytesRead
-  endianness <- pByteOrder
-  p42
-  offset <- pIFDOffset
+  endianness <- parseByteOrder
+  parse42
+  offset <- parseIFDOffset
   return $ TIFFHeader tiffHeaderOfset endianness offset
 
-pIFDOffset :: Parser Int
-pIFDOffset = do
+parseIFDOffset :: Parser Int
+parseIFDOffset = do
   rawWord <- getW32le
   return $ fromIntegral $ toInteger (rawWord - 8)
 
-parseExif :: ByteString -> (Either ParserError TempResult, [String])
+{-
+ - This is the parsing function that is used to actually parse the Exif tag
+ - of a image file. We expect to receive a ByteString of said image.
+ -}
+parseExif :: ByteString -> ParserResult TempResult
 parseExif = runParser $ do
-  pSOI
-  (header, fields) <- pApp1
+  parseSOI
+  (header, fields) <- parseApp1
   position <- liftP G.bytesRead
   return (header, fields, position)
