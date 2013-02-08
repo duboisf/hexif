@@ -12,10 +12,12 @@ import Control.Monad.Error (Error(..), ErrorT, lift, runErrorT, throwError)
 import Control.Monad.Error.Class (MonadError)
 import qualified Data.Binary.Get as G
 import Data.ByteString.Lazy (ByteString)
+import Data.Char (toUpper)
 import Data.Exif.Types
 import Data.Int (Int64)
 import Data.Word (Word8, Word16, Word32)
 import Numeric (showHex)
+import Prelude hiding (log)
 
 data ParserError
   = Unsatisfied String
@@ -45,11 +47,9 @@ satisfy desc expected actual =
     then return actual
     else throwError (Unsatisfied errorMsg)
   where
-    msgList = ["Expected", desc, expectedString, "got", showHex' actual]
-    expectedString = "(" ++ showHex' expected ++ ")"
+    msgList = ["Expected", desc, expectedString, "got", toHex actual]
+    expectedString = "(" ++ toHex expected ++ ")"
     errorMsg = unwords msgList
-    showHex' :: (Integral a, Show a) => a -> String
-    showHex' number = "0x" ++ showHex number ""
 
 satisfy_ :: (Show a, Eq a, Integral a) => String -> a -> a -> Parser ()
 satisfy_ desc expected actual =
@@ -74,10 +74,23 @@ getW32le = liftP G.getWord32le
 getW32be :: Parser Word32
 getW32be = liftP G.getWord32be
 
-currentTiffOffset :: TIFFHeader -> Parser Int
-currentTiffOffset header = do
-  bytesRead' <- liftP G.bytesRead
-  return $ (fromInteger . toInteger) bytesRead' - (thOffset header)
+log :: String -> Parser ()
+log x = tell [x]
+
+toHex :: (Show a, Integral a) => a -> String
+toHex x = "0x" ++ map toUpper (showHex x "")
+
+logWithPosition :: String -> Parser ()
+logWithPosition x = do
+  position <- liftP G.bytesRead
+  let pos = show position
+  let hexPos = toHex position
+  log $ concat [x, " (current position: ", pos, " (", hexPos, "))"]
+
+logPosition :: Parser ()
+logPosition = do
+  position <- liftP G.bytesRead
+  log $ "Current position: " ++ toHex position
 
 {-
  - PARSERS
@@ -86,13 +99,19 @@ currentTiffOffset header = do
  - All the parsing methods start with 'p'
  -}
 
+currentTiffOffset :: TIFFHeader -> Parser Int
+currentTiffOffset header = do
+  bytesRead' <- liftP G.bytesRead
+  return $ (fromInteger . toInteger) bytesRead' - (thOffset header)
+
 parseByteOrder :: Parser Endianness
 parseByteOrder = do
   rawWord <- getW16be
+  logWithPosition "parsed byte order tag"
   case rawWord of
     0x4949 -> return LittleEndian
     0x4D4D -> return BigEndian
-    other -> throwError $ UndefinedEndianness $ showHex other ""
+    other -> throwError $ UndefinedEndianness $ toHex other
 
 -- Yup, we expect this following the Endianness in the header
 parse42 :: Parser ()
@@ -104,34 +123,45 @@ parseSOI = satisfy_ "JPEG magic number" 0xFFD8 =<< getW16be
 
 -- Used to abstract result type so that when testing I don't need to change 15
 -- method signatures
-type TempResult = (TIFFHeader, [RawIFDField], Int64)
+type TempResult = (TIFFHeader, [RawIFDField])
 
 parseApp1 :: Parser (TIFFHeader, [RawIFDField])
 parseApp1 = do
   satisfy_ "APP1 marker" 0xFFE1 =<< getW16be
+  logWithPosition "parsed APP1 marker"
   app1Length <- getW16le
+  logWithPosition "parsed app1 length"
   satisfy_ "Exif identifier code" 0x45786966 =<< getW32be
+  logWithPosition "parsed exif identifier code"
   satisfy_ "Byte order prefix" 0x00 =<< getW16le
+  logWithPosition "parsed byte order prefix"
   tiffHeader <- parseTIFFHeader
   liftP $ G.skip $ thIFDOffset tiffHeader
-  tell ["about to parse the 0th IFD"]
+  logWithPosition "skiped to ifd0 offset"
   (raw0thIFDFields, nextIFDOffset) <- parse0thIFD
   let nbFields = length raw0thIFDFields
-  tell [("finished parsing the 0th IFD, found " ++ show nbFields ++ " fields")]
+  log $ "finished parsing the 0th IFD, found " ++ show nbFields ++ " fields"
+  nextIFDOffset <- getW16le
+  log $ "next offset: " ++ toHex nextIFDOffset
   return (tiffHeader, raw0thIFDFields)
 
 parse0thIFD :: Parser ([RawIFDField], Word16)
 parse0thIFD = do
-  nbFields <- getW16le
-  rawFields <- repeat (fromIntegral nbFields) []
+  nbFields <- fromIntegral `liftM` getW16le
+  logWithPosition ("parsed nb fields, it's " ++ show nbFields)
+  rawFields <- parseRawFields nbFields []
   nextIFDOffset <- getW16le
   return (rawFields, nextIFDOffset)
   where
-    repeat :: Int -> [RawIFDField] -> Parser [RawIFDField]
-    repeat 0 res = return $ reverse res
-    repeat n cum = do
+    parseRawFields :: Int -> [RawIFDField] -> Parser [RawIFDField]
+    parseRawFields 0 res = return $ reverse res
+    parseRawFields n cum = do
+      log $ "parsing field " ++ show (length cum)
+      logLine
       field <- praseRawFieldDef
-      repeat (n - 1) (field : cum)
+      logLine
+      parseRawFields (n - 1) (field : cum)
+    logLine = log $ take 20 $ repeat '-'
 
 {-
  - This results in raw field definitions. The difference between a raw field
@@ -142,38 +172,47 @@ parse0thIFD = do
  -}
 praseRawFieldDef :: Parser RawIFDField
 praseRawFieldDef = do
-  tag <- word2Tag `liftM` getW16le
+  tag <- getW16le
+  logWithPosition $ "tag: " ++ toHex tag
   rawType <- getW16le
   exifType <- case word2ExifType rawType of
     Nothing -> do
       bytesRead' <- liftP G.bytesRead
       throwError $ InvalidExifType bytesRead' rawType
     Just y -> return y
+  logWithPosition $ "exifType: " ++ show exifType
   rawCount <- getW32le
   let count = fromIntegral rawCount
+  logWithPosition $ "count: " ++ show count
   valueOffset <- getW32le
+  logWithPosition $ "value offset: " ++ toHex valueOffset
   return $ RawIFDField tag exifType count valueOffset
 
 parseTIFFHeader :: Parser TIFFHeader
 parseTIFFHeader = do
   tiffHeaderOfset <- (fromIntegral . toInteger) `liftM` liftP G.bytesRead
+  log $ "TIFF header offset: " ++ toHex tiffHeaderOfset
   endianness <- parseByteOrder
   parse42
+  logWithPosition "parsed 42"
   offset <- parseIFDOffset
   return $ TIFFHeader tiffHeaderOfset endianness offset
 
 parseIFDOffset :: Parser Int
 parseIFDOffset = do
   rawWord <- getW32le
+  logWithPosition "parsed ifd0 offset"
   return $ fromIntegral $ toInteger (rawWord - 8)
 
 {-
  - This is the parsing function that is used to actually parse the Exif tag
- - of a image file. We expect to receive a ByteString of said image.
+ - of an image file. We expect to receive a ByteString of said image as input.
  -}
 parseExif :: ByteString -> ParserResult TempResult
 parseExif = runParser $ do
+  logWithPosition "Starting parsing"
   parseSOI
+  logWithPosition "Parsed start of image"
   (header, fields) <- parseApp1
-  position <- liftP G.bytesRead
-  return (header, fields, position)
+  return (header, fields)
+

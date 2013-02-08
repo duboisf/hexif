@@ -13,7 +13,7 @@ data TIFFHeader = TIFFHeader {
 
 -- IFD (Image File Directory) Field
 data RawIFDField = RawIFDField {
-    rifTag :: Tag
+    rifTag :: Word16
   , rifType :: Type
   , rifCount :: Int
   , rifOffset :: Word32
@@ -29,7 +29,7 @@ data IFDField = IFDField {
 toIFDField :: RawIFDField -> ExifAttribute -> IFDField
 toIFDField rawField value =
   IFDField
-    (rifTag rawField)
+    (word2Tag (rifTag rawField))
     (rifType rawField)
     (rifCount rawField)
     value
