@@ -6,9 +6,9 @@ import Data.Word (Word8, Word16, Word32)
 data Endianness = LittleEndian | BigEndian deriving (Show)
 
 data TIFFHeader = TIFFHeader {
-    thOffset :: Int
+    thOffset :: Word32
   , thByteOrder :: Endianness
-  , thIFDOffset :: Int
+  , thIFDOffset :: Word32
 } deriving (Show)
 
 -- IFD (Image File Directory) Field
@@ -20,8 +20,7 @@ data RawIFDField = RawIFDField {
 } deriving Show
 
 data IFDField = IFDField {
-    ifTag :: Tag
-  , ifType :: Type
+    ifType :: Type
   , ifCount :: Int
   , ifValue :: ExifAttribute
 } deriving Show
@@ -29,7 +28,6 @@ data IFDField = IFDField {
 toIFDField :: RawIFDField -> ExifAttribute -> IFDField
 toIFDField rawField value =
   IFDField
-    (word2Tag (rifTag rawField))
     (rifType rawField)
     (rifCount rawField)
     value

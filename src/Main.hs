@@ -112,14 +112,20 @@ main = do
       contents <- BSL.readFile $ let File file = head files in file
       let result = parseExif contents
       case result of
-        (Left err, logs) -> print err >> print logs >> exitFailure
+        (Left err, logs) -> do
+          putStr "Got an error while parsing: " >> print err
+          printLogs logs
+          exitFailure
         (Right (header, fields), logs) -> do
-          putStrLn "Parsing logs:"
-          forM_ logs putStrLn
+          printLogs logs
           forM_ (zip [1..] fields) $ \(n, field) -> do
             printLine
             putStrLn $ "Field " ++ show n
             printField field
+    printLogs :: [String] -> IO ()
+    printLogs logs = do
+      putStrLn "Parsing logs:"
+      forM_ logs putStrLn
 
     printLine = putStrLn $ replicate 20 '-'
 

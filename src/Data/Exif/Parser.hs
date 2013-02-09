@@ -5,7 +5,7 @@ module Data.Exif.Parser (
   , ParserResult
   ) where
 
-import Control.Monad (liftM, void)
+import Control.Monad (forM, forM_, liftM, unless, void)
 import Control.Monad.Writer.Lazy (runWriterT, WriterT, tell)
 import Control.Monad.Writer.Class (MonadWriter)
 import Control.Monad.Error (Error(..), ErrorT, lift, runErrorT, throwError)
@@ -15,6 +15,8 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Char (toUpper)
 import Data.Exif.Types
 import Data.Int (Int64)
+import Data.List (sortBy)
+import Data.Ord (comparing)
 import Data.Word (Word8, Word16, Word32)
 import Numeric (showHex)
 import Prelude hiding (log)
@@ -25,6 +27,7 @@ data ParserError
   | InvalidExifTag Int64 Word16
   | InvalidExifType Int64 Word16
   | UndefinedEndianness String
+  | InvalidOffset
     deriving (Show)
 
 instance Error ParserError where
@@ -74,6 +77,9 @@ getW32le = liftP G.getWord32le
 getW32be :: Parser Word32
 getW32be = liftP G.getWord32be
 
+bytesRead' :: Parser Int64
+bytesRead' = liftP G.bytesRead
+
 log :: String -> Parser ()
 log x = tell [x]
 
@@ -98,11 +104,6 @@ logPosition = do
  - Here follows all our binary parsers for the Exif format.
  - All the parsing methods start with 'p'
  -}
-
-currentTiffOffset :: TIFFHeader -> Parser Int
-currentTiffOffset header = do
-  bytesRead' <- liftP G.bytesRead
-  return $ (fromInteger . toInteger) bytesRead' - (thOffset header)
 
 parseByteOrder :: Parser Endianness
 parseByteOrder = do
@@ -135,22 +136,51 @@ parseApp1 = do
   logWithPosition "parsed exif identifier code"
   satisfy_ "Byte order prefix" 0x00 =<< getW16le
   logWithPosition "parsed byte order prefix"
+
+  -- Parse TIFF header
   tiffHeader <- parseTIFFHeader
-  liftP $ G.skip $ thIFDOffset tiffHeader
+  log $ "TIFF header offset: " ++ (toDecimHex $ thOffset tiffHeader)
+  liftP $ G.skip $ fromInteger $ toInteger $ thIFDOffset tiffHeader
   logWithPosition "skiped to ifd0 offset"
+
+  -- Parse raw fields
   (raw0thIFDFields, nextIFDOffset) <- parse0thIFD
   let nbFields = length raw0thIFDFields
   log $ "finished parsing the 0th IFD, found " ++ show nbFields ++ " fields"
-  nextIFDOffset <- getW16le
-  log $ "next offset: " ++ toHex nextIFDOffset
+  log $ "next IFD offset: " ++ toHex nextIFDOffset
+  parseLongFieldValues tiffHeader raw0thIFDFields
   return (tiffHeader, raw0thIFDFields)
 
-parse0thIFD :: Parser ([RawIFDField], Word16)
+-- fields with values bigger than 4 bytes need special handling,
+-- since the actual values are offset farther down the bytestream
+parseLongFieldValues :: TIFFHeader -> [RawIFDField] -> Parser [IFDField]
+parseLongFieldValues header rawFields = do
+  -- filter to keep only the fields with values bigger than 4 bytes,
+  -- then order by the offset value, as we can't rewind the bytestream
+  let sortedFields = sortBy (comparing rifOffset) $ filter sizeBiggerThan4 rawFields
+  let tiffOffset = thOffset header
+  forM sortedFields $ \rawField -> do
+    let valueOffset = tiffOffset + rifOffset rawField
+    currentOffset <- fromIntegral `liftM` bytesRead'
+    unless (valueOffset == currentOffset) $ do
+      logAndThrow InvalidOffset $ "expecting offset " ++ toHex valueOffset ++ ", got " ++ toHex currentOffset
+    return undefined
+  where
+    sizeBiggerThan4 field = typeSize (rifType field) * (rifCount field) > 4
+
+logAndThrow :: ParserError -> String -> Parser ()
+logAndThrow err msg =
+  log ("Error: " ++ show err ++ ": " ++ msg) >> throwError err
+
+realOffset :: TIFFHeader -> RawIFDField -> Word32
+realOffset header field = thOffset header + rifOffset field
+
+parse0thIFD :: Parser ([RawIFDField], Word32)
 parse0thIFD = do
   nbFields <- fromIntegral `liftM` getW16le
   logWithPosition ("parsed nb fields, it's " ++ show nbFields)
   rawFields <- parseRawFields nbFields []
-  nextIFDOffset <- getW16le
+  nextIFDOffset <- getW32le
   return (rawFields, nextIFDOffset)
   where
     parseRawFields :: Int -> [RawIFDField] -> Parser [RawIFDField]
@@ -173,7 +203,7 @@ parse0thIFD = do
 praseRawFieldDef :: Parser RawIFDField
 praseRawFieldDef = do
   tag <- getW16le
-  logWithPosition $ "tag: " ++ toHex tag
+  logWithPosition $ "tag: " ++ toHex tag ++ " (" ++ show (word2Tag tag) ++ ")"
   rawType <- getW16le
   exifType <- case word2ExifType rawType of
     Nothing -> do
@@ -185,8 +215,11 @@ praseRawFieldDef = do
   let count = fromIntegral rawCount
   logWithPosition $ "count: " ++ show count
   valueOffset <- getW32le
-  logWithPosition $ "value offset: " ++ toHex valueOffset
+  logWithPosition $ "value offset: " ++ toDecimHex valueOffset
   return $ RawIFDField tag exifType count valueOffset
+
+toDecimHex :: (Integral a, Show a) => a -> String
+toDecimHex x = show x ++ " (" ++ toHex x ++ ")"
 
 parseTIFFHeader :: Parser TIFFHeader
 parseTIFFHeader = do
@@ -198,11 +231,11 @@ parseTIFFHeader = do
   offset <- parseIFDOffset
   return $ TIFFHeader tiffHeaderOfset endianness offset
 
-parseIFDOffset :: Parser Int
+parseIFDOffset :: Parser Word32
 parseIFDOffset = do
   rawWord <- getW32le
   logWithPosition "parsed ifd0 offset"
-  return $ fromIntegral $ toInteger (rawWord - 8)
+  return $ rawWord - 8
 
 {-
  - This is the parsing function that is used to actually parse the Exif tag
