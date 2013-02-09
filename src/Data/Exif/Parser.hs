@@ -139,7 +139,7 @@ parseApp1 = do
 
   -- Parse TIFF header
   tiffHeader <- parseTIFFHeader
-  log $ "TIFF header offset: " ++ (toDecimHex $ thOffset tiffHeader)
+  log $ "TIFF header offset: " ++ toDecimHex (thOffset tiffHeader)
   liftP $ G.skip $ fromInteger $ toInteger $ thIFDOffset tiffHeader
   logWithPosition "skiped to ifd0 offset"
 
@@ -163,16 +163,16 @@ parseLongFieldValues header rawFields = do
   forM sortedFields $ \rawField -> do
     let valueOffset = tiffOffset + rifOffset rawField
     currentOffset <- fromIntegral `liftM` bytesRead'
-    unless (valueOffset == currentOffset) $ do
+    unless (valueOffset == currentOffset) $
       logError InvalidOffset $ concat [
           "expecting offset ", toHex valueOffset, ", got ", toHex currentOffset
         ]
-    logWithPosition $ "returning new field"
+    logWithPosition "returning new field"
     -- for now just skip the bytes to test
     liftP $ G.skip $ typeSize (rifType rawField) * rifCount rawField
     return undefined
   where
-    sizeBiggerThan4 field = typeSize (rifType field) * (rifCount field) > 4
+    sizeBiggerThan4 field = typeSize (rifType field) * rifCount field > 4
 
 logError :: ParserError -> String -> Parser ()
 logError err msg =
@@ -194,7 +194,7 @@ parse0thIFD = do
       field <- praseRawFieldDef
       logLine
       parseRawFields (n - 1) (field : cum)
-    logLine = log $ take 20 $ repeat '-'
+    logLine = log $ replicate 20 '-'
 
 {-
  - This results in raw field definitions. The difference between a raw field

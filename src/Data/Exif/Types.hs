@@ -26,11 +26,7 @@ data IFDField = IFDField {
 } deriving Show
 
 toIFDField :: RawIFDField -> ExifAttribute -> IFDField
-toIFDField rawField value =
-  IFDField
-    (rifType rawField)
-    (rifCount rawField)
-    value
+toIFDField rawField = IFDField (rifType rawField) (rifCount rawField)
 
 type RatioW32 = Ratio Word32
 

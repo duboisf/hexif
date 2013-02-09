@@ -95,7 +95,7 @@ printUsage = do
 main :: IO ()
 main = do
   args <- getArgs
-  if length args > 0
+  if not (null args)
     then do
       srcDir <- head `liftM` getArgs
       exists <- doesDirectoryExist srcDir
