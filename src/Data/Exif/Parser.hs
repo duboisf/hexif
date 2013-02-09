@@ -153,6 +153,7 @@ parseApp1 = do
 
 -- fields with values bigger than 4 bytes need special handling,
 -- since the actual values are offset farther down the bytestream
+-- instead of being contained in the field definition.
 parseLongFieldValues :: TIFFHeader -> [RawIFDField] -> Parser [IFDField]
 parseLongFieldValues header rawFields = do
   -- filter to keep only the fields with values bigger than 4 bytes,
@@ -163,22 +164,24 @@ parseLongFieldValues header rawFields = do
     let valueOffset = tiffOffset + rifOffset rawField
     currentOffset <- fromIntegral `liftM` bytesRead'
     unless (valueOffset == currentOffset) $ do
-      logAndThrow InvalidOffset $ "expecting offset " ++ toHex valueOffset ++ ", got " ++ toHex currentOffset
+      logError InvalidOffset $ concat [
+          "expecting offset ", toHex valueOffset, ", got ", toHex currentOffset
+        ]
+    logWithPosition $ "returning new field"
+    -- for now just skip the bytes to test
+    liftP $ G.skip $ typeSize (rifType rawField) * rifCount rawField
     return undefined
   where
     sizeBiggerThan4 field = typeSize (rifType field) * (rifCount field) > 4
 
-logAndThrow :: ParserError -> String -> Parser ()
-logAndThrow err msg =
+logError :: ParserError -> String -> Parser ()
+logError err msg =
   log ("Error: " ++ show err ++ ": " ++ msg) >> throwError err
-
-realOffset :: TIFFHeader -> RawIFDField -> Word32
-realOffset header field = thOffset header + rifOffset field
 
 parse0thIFD :: Parser ([RawIFDField], Word32)
 parse0thIFD = do
   nbFields <- fromIntegral `liftM` getW16le
-  logWithPosition ("parsed nb fields, it's " ++ show nbFields)
+  logWithPosition $ "parsed nb fields, it's " ++ show nbFields
   rawFields <- parseRawFields nbFields []
   nextIFDOffset <- getW32le
   return (rawFields, nextIFDOffset)
