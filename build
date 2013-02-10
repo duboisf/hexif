@@ -1,33 +1,33 @@
-#!/bin/bash
+#!/usr/bin/zsh
 
 which inotifywait > /dev/null 2>&1
 if (( $? != 0 )); then
-    cat >&2 <<EOF
-This script requires the 'inofitywait' executable.
+    cat >&2 <<-EOF
+	This script requires the 'inofitywait' executable.
 
-It wasn't found on the PATH.
+	It wasn't found on the PATH.
 
-On debian and derivatives it can be installed with:
+	On debian and derivatives it can be installed with:
 
-apt-get install inotify-tools
+	apt-get install inotify-tools
 EOF
     exit 1
 fi
 
-cabal build
+do_build() {
+    print "[0;33mInvoking cabal build...[0m"
+    local color
+    CABAL_OUTPUT=$(cabal build 2>&1)
+    (( $? != 0 )) && color=1
+    print "[0;3${color:-2}m${CABAL_OUTPUT}[0m"
+}
 
-while true; do
-    RESULT=`inotifywait -r src -q`
-    echo "inotify: $RESULT"
-    echo $RESULT | grep '\.hs$' | grep -P 'CREATE|MODIFY|CLOSE_WRITE'
-    if (( $? == 0 )); then
-        CABAL_OUTPUT=`cabal build 2>&1`
-        if (( $? == 0 )); then
-            echo "[0;32m${CABAL_OUTPUT}[0m"
-        else
-            echo "[0;31m${CABAL_OUTPUT}[0m"
-        fi
+do_build
+
+inotifywait -r src -m -q -e close_write | while read line; do
+    if [[ $line == *.hs ]]; then
+        do_build
     fi
 done
 
-# vim: sw=4 sts=4 ts=4 et
+# vim: ft=zsh sw=4 sts=4 ts=4 et
