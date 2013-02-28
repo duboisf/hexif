@@ -12,21 +12,12 @@ data TIFFHeader = TIFFHeader {
 } deriving (Show)
 
 -- IFD (Image File Directory) Field
-data RawIFDField = RawIFDField {
+data IFDField = IFDField {
     rifTag :: Word16
   , rifType :: Type
   , rifCount :: Int
   , rifOffset :: Word32
 } deriving Show
-
-data IFDField = IFDField {
-    ifType :: Type
-  , ifCount :: Int
-  , ifValue :: ExifAttribute
-} deriving Show
-
-toIFDField :: RawIFDField -> ExifAttribute -> IFDField
-toIFDField rawField = IFDField (rifType rawField) (rifCount rawField)
 
 type RatioW32 = Ratio Word32
 
@@ -121,13 +112,13 @@ word2Tag rawWord =
         then TUnknownPrivateTag rawWord
         else TUnknownTag rawWord
 
-data ExifAttribute
+data ExifTag
   {-
-   - TIFF Attributes used in Exif
+   - TIFF tags used in Exif
    -}
   -- Image data structure
-  = ImageWidth Integer
-  | ImageLength Integer
+  = ImageWidth Int
+  | ImageLength Int
   | BitsPerSample Int Int Int
   | Compression Int
   | PhotometricInterpretation Int
@@ -160,7 +151,7 @@ data ExifAttribute
   | Artist String
   | Copyright String
   {-
-   - Exif Attributes
+   - Exif specific tags
    -}
   -- Version
   | ExifVersion Word32
@@ -225,6 +216,8 @@ data ExifAttribute
   | SubjectDistanceRange Int
   -- Other
   | ImageUniqueID String
+  | UnknownPrivateTag Word16
+  | UnknownTag Word16
     deriving (Show)
 
 data ResolutionUnit = Centimeters

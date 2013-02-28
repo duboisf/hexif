@@ -105,6 +105,7 @@ main = do
     else printUsage
 
   where
+
     doWork :: String -> IO ()
     doWork srcDir = do
       let appConfig = AppConfig (Dir srcDir) (Dir ".")
@@ -116,7 +117,7 @@ main = do
           putStr "Got an error while parsing: " >> print err
           printLogs logs
           exitFailure
-        (Right (header, fields), logs) -> do
+        (Right (_, fields), logs) -> do
           printLogs logs
           forM_ (zip [1..] fields) $ \(n, field) -> do
             printLine
@@ -129,7 +130,7 @@ main = do
 
     printLine = putStrLn $ replicate 20 '-'
 
-    printField :: RawIFDField -> IO ()
+    printField :: IFDField -> IO ()
     printField field =
       putStrLn $ 
         "Tag: " ++ show (word2Tag (rifTag field)) ++

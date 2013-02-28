@@ -5,7 +5,7 @@ module Data.Exif.Parser (
   , ParserResult
   ) where
 
-import Control.Monad (forM, forM_, liftM, unless, void)
+import Control.Monad (ap, forM, liftM, unless, void)
 import Control.Monad.Writer.Lazy (runWriterT, WriterT, tell)
 import Control.Monad.Writer.Class (MonadWriter)
 import Control.Monad.Error (Error(..), ErrorT, lift, runErrorT, throwError)
@@ -65,11 +65,17 @@ liftP = Parser . lift . lift
 getW8 :: Parser Word8
 getW8 = liftP G.getWord8
 
+getByte :: Parser Int
+getByte = fromIntegral `liftM` getW8
+
 getW16be :: Parser Word16
 getW16be = liftP G.getWord16be
 
 getW16le :: Parser Word16
 getW16le = liftP G.getWord16le
+
+getShort :: Parser Int
+getShort = fromIntegral `liftM` getW16le
 
 getW32le :: Parser Word32
 getW32le = liftP G.getWord32le
@@ -124,9 +130,9 @@ parseSOI = satisfy_ "JPEG magic number" 0xFFD8 =<< getW16be
 
 -- Used to abstract result type so that when testing I don't need to change 15
 -- method signatures
-type TempResult = (TIFFHeader, [RawIFDField])
+type TempResult = (TIFFHeader, [IFDField])
 
-parseApp1 :: Parser (TIFFHeader, [RawIFDField])
+parseApp1 :: Parser (TIFFHeader, [IFDField])
 parseApp1 = do
   satisfy_ "APP1 marker" 0xFFE1 =<< getW16be
   logWithPosition "parsed APP1 marker"
@@ -148,13 +154,13 @@ parseApp1 = do
   let nbFields = length raw0thIFDFields
   log $ "finished parsing the 0th IFD, found " ++ show nbFields ++ " fields"
   log $ "next IFD offset: " ++ toHex nextIFDOffset
-  fields <- parseLongFieldValues tiffHeader raw0thIFDFields
+  parseLongFieldValues tiffHeader raw0thIFDFields
   return (tiffHeader, raw0thIFDFields)
 
 -- fields with values bigger than 4 bytes need special handling,
 -- since the actual values are offset farther down the bytestream
 -- instead of being contained in the field definition.
-parseLongFieldValues :: TIFFHeader -> [RawIFDField] -> Parser [ExifAttribute]
+parseLongFieldValues :: TIFFHeader -> [IFDField] -> Parser [ExifTag]
 parseLongFieldValues header rawFields = do
   -- filter to keep only the fields with values bigger than 4 bytes,
   -- then order by the offset value, as we can't rewind the bytestream
@@ -169,7 +175,7 @@ parseLongFieldValues header rawFields = do
         ]
     logWithPosition "returning new field"
     -- for now just skip the bytes to test
-    field <- readExifAttribute rawField
+    field <- readExifTag rawField
     tell $ ["debug: read field: " ++ show field]
     return field
     -- liftP $ G.skip $ typeSize (rifType rawField) * rifCount rawField
@@ -177,121 +183,142 @@ parseLongFieldValues header rawFields = do
     sizeBiggerThan4 field = typeSize (rifType field) * rifCount field > 4
 
 -- The mother of all parsing functions
-readExifAttribute :: RawIFDField -> Parser ExifAttribute
-readExifAttribute (RawIFDField tag dataType count offset) =
-  case tag of
---    0x100 -> ImageWidth
---    -> ImageLength Integer
---    -> BitsPerSample Int Int Int
---    -> Compression Int
---    -> PhotometricInterpretation Int
---    -> Orientation Int
---    -> SamplesPerPixel Int
---    -> PlanarConfiguration Int
---    -> YCbCrSubSampling Int Int
---    -> YCbCrPositioning Int
---    -> XResolution Rational
---    -> YResolution Rational
---    -> ResolutionUnit ResolutionUnit
---    -- Recording offset
---    -> StripOffsets Integer
---    -> RowsPerStrip Integer
---    -> StripByteCount [Integer]
---    -> JPEGInterchangeFormat Integer
---    -> JPEGInterchangeFormatLength Integer
---    -- Image data characteristics
---    -> TransferFunction [Int]
---    -> WhitePoint Rational Rational Rational
---    -> PrimaryChromaticities [Rational]
---    -> YCbCrCoefficients Rational Rational Rational
---    -> ReferenceBlackWhite [Rational]
---    -- Other tags
-    0x0132 -> readString DateTime
---    -> ImageDescription String
-    0x010F -> readString Make
-    0x0110 -> readString Model
-    0x0131 -> readString Software
-    0x013B -> readString Artist
-    0x8298 -> readString Copyright
---    {-
---    - Exif Attributes
---    -}
---    -- Version
---    -> ExifVersion Word32
---    -> FlashPixVersion Word32
---    -- Image data characteristics
---    -> ColorSpace Int
---    -> ComponentsConfiguration Word32
---    -> CompressedBitsPerPixel Rational
---    -> PixelXDimension Integer
---    -> PixelYDimension Integer
---    -- User information
---    -> MakerNote String
---    -> UserComment String
---    -- Related file information
---    -> RelatedSoundFile String
---    -- Date and time
---    -> DateTimeOriginal String
---    -> DateTimeDigitized String
---    -> SubSecTime String
---    -> SubSecTimeOriginal String
---    -> SubSecTimeDigitized String
---    -- Picture-taking conditions
---    -> ExposureTime Rational
---    -> FNumber Rational
---    -> ExposureProgram Int
---    -> SpectralSensitivity String
---    -> ISOSpeedRatings Int
---    -> OECF Word32
---    -> ShutterSpeedValue Rational
---    -> ApertureValue Rational
---    -> BrightnessValue Rational
---    -> ExposureBiasValue Rational
---    -> MaxApertureValue Rational
---    -> SubjectDistance Rational
---    -> MeteringMode Int
---    -> LightSource Int
---    -> Flash Int
---    -> FocalLength Rational
---    -> SubjectArea [Int]
---    -> FlashEnergy Rational
---    -> SpatialFrequencyResponse [Word8]
---    -> FocalPlaneXResolution Rational
---    -> FocalPlaneYResolution Rational
---    -> FocalPlaneResolutionUnit Int
---    -> SubjectLocation Int Int
---    -> ExposureIndex Rational
---    -> SensingMethod Int
---    -> FileSource Word32
---    -> SceneType Word32
---    -> CFAPattern [Word8]
---    -> CustomRenderer Int
---    -> ExposureMode Int
---    -> WhiteBalance Int
---    -> DigitalZoomRatio Rational
---    -> FocalLengthIn35mmFilm Int
---    -> SceneCaptureType Int
---    -> GainControl Rational
---    -> Contrast Int
---    -> Saturation Int
---    -> Sharpness Int
---    -> DeviceSettingsDescription [Word8]
---    -> SubjectDistanceRange Int
---    -- Other
---    -> ImageUniqueID String
-    otherwise -> return $ Make "blah"
+readExifTag :: IFDField -> Parser ExifTag
+readExifTag (IFDField rawTag dataType count offset) =
+  case rawTag of
+    0x0100 -> case dataType of
+      Short -> makeShortTag ImageWidth
+      Long -> makeLongTag ImageWidth
+    0x0101 -> case dataType of
+      Short -> makeShortTag ImageLength
+      Long -> makeLongTag ImageLength
+    0x0102 -> BitsPerSample `liftM` getShort `ap` getShort `ap` getShort
+    0x0103 -> Compression `liftM` getShort
+    -- -> PhotometricInterpretation Int
+    -- -> Orientation Int
+    -- -> SamplesPerPixel Int
+    -- -> PlanarConfiguration Int
+    -- -> YCbCrSubSampling Int Int
+    -- -> YCbCrPositioning Int
+    -- -> XResolution Rational
+    -- -> YResolution Rational
+    -- -> ResolutionUnit ResolutionUnit
+    -- -- Recording offset
+    -- -> StripOffsets Integer
+    -- -> RowsPerStrip Integer
+    -- -> StripByteCount [Integer]
+    -- -> JPEGInterchangeFormat Integer
+    -- -> JPEGInterchangeFormatLength Integer
+    -- -- Image data characteristics
+    -- -> TransferFunction [Int]
+    -- -> WhitePoint Rational Rational Rational
+    -- -> PrimaryChromaticities [Rational]
+    -- -> YCbCrCoefficients Rational Rational Rational
+    -- -> ReferenceBlackWhite [Rational]
+    -- Other tags
+    0x0132 -> makeStringTag DateTime
+    -- -> ImageDescription String
+    0x010F -> makeStringTag Make
+    0x0110 -> makeStringTag Model
+    0x0131 -> makeStringTag Software
+    0x013B -> makeStringTag Artist
+    0x8298 -> makeStringTag Copyright
+    {-
+    - Exif Attributes
+    -}
+    -- Version
+    -- -> ExifVersion Word32
+    -- -> FlashPixVersion Word32
+    -- Image data characteristics
+    -- -> ColorSpace Int
+    -- -> ComponentsConfiguration Word32
+    -- -> CompressedBitsPerPixel Rational
+    -- -> PixelXDimension Integer
+    -- -> PixelYDimension Integer
+    -- User information
+    -- -> MakerNote String
+    -- -> UserComment String
+    -- Related file information
+    -- -> RelatedSoundFile String
+    -- Date and time
+    -- -> DateTimeOriginal String
+    -- -> DateTimeDigitized String
+    -- -> SubSecTime String
+    -- -> SubSecTimeOriginal String
+    -- -> SubSecTimeDigitized String
+    -- Picture-taking conditions
+    -- -> ExposureTime Rational
+    -- -> FNumber Rational
+    -- -> ExposureProgram Int
+    -- -> SpectralSensitivity String
+    -- -> ISOSpeedRatings Int
+    -- -> OECF Word32
+    -- -> ShutterSpeedValue Rational
+    -- -> ApertureValue Rational
+    -- -> BrightnessValue Rational
+    -- -> ExposureBiasValue Rational
+    -- -> MaxApertureValue Rational
+    -- -> SubjectDistance Rational
+    -- -> MeteringMode Int
+    -- -> LightSource Int
+    -- -> Flash Int
+    -- -> FocalLength Rational
+    -- -> SubjectArea [Int]
+    -- -> FlashEnergy Rational
+    -- -> SpatialFrequencyResponse [Word8]
+    -- -> FocalPlaneXResolution Rational
+    -- -> FocalPlaneYResolution Rational
+    -- -> FocalPlaneResolutionUnit Int
+    -- -> SubjectLocation Int Int
+    -- -> ExposureIndex Rational
+    -- -> SensingMethod Int
+    -- -> FileSource Word32
+    -- -> SceneType Word32
+    -- -> CFAPattern [Word8]
+    -- -> CustomRenderer Int
+    -- -> ExposureMode Int
+    -- -> WhiteBalance Int
+    -- -> DigitalZoomRatio Rational
+    -- -> FocalLengthIn35mmFilm Int
+    -- -> SceneCaptureType Int
+    -- -> GainControl Rational
+    -- -> Contrast Int
+    -- -> Saturation Int
+    -- -> Sharpness Int
+    -- -> DeviceSettingsDescription [Word8]
+    -- -> SubjectDistanceRange Int
+    -- Other
+    -- -> ImageUniqueID String
+    _ -> return $ if rawTag >= 32768
+        then UnknownPrivateTag rawTag
+        else UnknownTag rawTag
+
   where
-    readString :: (String -> ExifAttribute) -> Parser ExifAttribute
-    readString ctor = (ctor . dropRightNulls . unpack) `liftM`
-      liftP (G.getLazyByteString (fromIntegral count))
+
+    makeStringTag :: (String -> ExifTag) -> Parser ExifTag
+    makeStringTag ctor = do
+      bytestring <- liftP . G.getLazyByteString $ fromIntegral count
+      return $ ctor . dropRightNulls . unpack $ bytestring
+
     dropRightNulls :: String -> String
     dropRightNulls = takeWhile ((/=) '\NUL')
+
+    makeIntTag :: Integral a => Parser a -> (Int -> ExifTag) -> Parser ExifTag
+    makeIntTag parser ctor = do
+      int <- fromIntegral `liftM` parser
+      return $ ctor int
+
+    makeShortTag :: (Int -> ExifTag) -> Parser ExifTag
+    makeShortTag = makeIntTag getW16le
+
+    makeLongTag :: (Int -> ExifTag) -> Parser ExifTag
+    makeLongTag = makeIntTag getW32le
 
 logError :: ParserError -> String -> Parser ()
 logError err msg =
   log ("Error: " ++ show err ++ ": " ++ msg) >> throwError err
 
-parse0thIFD :: Parser ([RawIFDField], Word32)
+parse0thIFD :: Parser ([IFDField], Word32)
 parse0thIFD = do
   nbFields <- fromIntegral `liftM` getW16le
   logWithPosition $ "parsed nb fields, it's " ++ show nbFields
@@ -299,7 +326,7 @@ parse0thIFD = do
   nextIFDOffset <- getW32le
   return (rawFields, nextIFDOffset)
   where
-    parseRawFields :: Int -> [RawIFDField] -> Parser [RawIFDField]
+    parseRawFields :: Int -> [IFDField] -> Parser [IFDField]
     parseRawFields 0 res = return $ reverse res
     parseRawFields n cum = do
       log $ "parsing field " ++ show (length cum)
@@ -316,7 +343,7 @@ parse0thIFD = do
  - the actual value, the size of the value needs to be 4 bytes or less. The
  - size of the value is the count (nb of values) times the size of each value.
  -}
-praseRawFieldDef :: Parser RawIFDField
+praseRawFieldDef :: Parser IFDField
 praseRawFieldDef = do
   tag <- getW16le
   logWithPosition $ "tag: " ++ toHex tag ++ " (" ++ show (word2Tag tag) ++ ")"
@@ -332,7 +359,7 @@ praseRawFieldDef = do
   logWithPosition $ "count: " ++ show count
   valueOffset <- getW32le
   logWithPosition $ "value offset: " ++ toDecimHex valueOffset
-  return $ RawIFDField tag exifType count valueOffset
+  return $ IFDField tag exifType count valueOffset
 
 toDecimHex :: (Integral a, Show a) => a -> String
 toDecimHex x = show x ++ " (" ++ toHex x ++ ")"
