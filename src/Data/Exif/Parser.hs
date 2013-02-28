@@ -11,7 +11,7 @@ import Control.Monad.Writer.Class (MonadWriter)
 import Control.Monad.Error (Error(..), ErrorT, lift, runErrorT, throwError)
 import Control.Monad.Error.Class (MonadError)
 import qualified Data.Binary.Get as G
-import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy.Char8 (ByteString, unpack)
 import Data.Char (toUpper)
 import Data.Exif.Types
 import Data.Int (Int64)
@@ -148,13 +148,13 @@ parseApp1 = do
   let nbFields = length raw0thIFDFields
   log $ "finished parsing the 0th IFD, found " ++ show nbFields ++ " fields"
   log $ "next IFD offset: " ++ toHex nextIFDOffset
-  parseLongFieldValues tiffHeader raw0thIFDFields
+  fields <- parseLongFieldValues tiffHeader raw0thIFDFields
   return (tiffHeader, raw0thIFDFields)
 
 -- fields with values bigger than 4 bytes need special handling,
 -- since the actual values are offset farther down the bytestream
 -- instead of being contained in the field definition.
-parseLongFieldValues :: TIFFHeader -> [RawIFDField] -> Parser [IFDField]
+parseLongFieldValues :: TIFFHeader -> [RawIFDField] -> Parser [ExifAttribute]
 parseLongFieldValues header rawFields = do
   -- filter to keep only the fields with values bigger than 4 bytes,
   -- then order by the offset value, as we can't rewind the bytestream
@@ -169,10 +169,123 @@ parseLongFieldValues header rawFields = do
         ]
     logWithPosition "returning new field"
     -- for now just skip the bytes to test
-    liftP $ G.skip $ typeSize (rifType rawField) * rifCount rawField
-    return undefined
+    field <- readExifAttribute rawField
+    tell $ ["debug: read field: " ++ show field]
+    return field
+    -- liftP $ G.skip $ typeSize (rifType rawField) * rifCount rawField
   where
     sizeBiggerThan4 field = typeSize (rifType field) * rifCount field > 4
+
+-- The mother of all parsing functions
+readExifAttribute :: RawIFDField -> Parser ExifAttribute
+readExifAttribute (RawIFDField tag dataType count offset) =
+  case tag of
+--    0x100 -> ImageWidth
+--    -> ImageLength Integer
+--    -> BitsPerSample Int Int Int
+--    -> Compression Int
+--    -> PhotometricInterpretation Int
+--    -> Orientation Int
+--    -> SamplesPerPixel Int
+--    -> PlanarConfiguration Int
+--    -> YCbCrSubSampling Int Int
+--    -> YCbCrPositioning Int
+--    -> XResolution Rational
+--    -> YResolution Rational
+--    -> ResolutionUnit ResolutionUnit
+--    -- Recording offset
+--    -> StripOffsets Integer
+--    -> RowsPerStrip Integer
+--    -> StripByteCount [Integer]
+--    -> JPEGInterchangeFormat Integer
+--    -> JPEGInterchangeFormatLength Integer
+--    -- Image data characteristics
+--    -> TransferFunction [Int]
+--    -> WhitePoint Rational Rational Rational
+--    -> PrimaryChromaticities [Rational]
+--    -> YCbCrCoefficients Rational Rational Rational
+--    -> ReferenceBlackWhite [Rational]
+--    -- Other tags
+    0x0132 -> readString DateTime
+--    -> ImageDescription String
+    0x010F -> readString Make
+    0x0110 -> readString Model
+    0x0131 -> readString Software
+    0x013B -> readString Artist
+    0x8298 -> readString Copyright
+--    {-
+--    - Exif Attributes
+--    -}
+--    -- Version
+--    -> ExifVersion Word32
+--    -> FlashPixVersion Word32
+--    -- Image data characteristics
+--    -> ColorSpace Int
+--    -> ComponentsConfiguration Word32
+--    -> CompressedBitsPerPixel Rational
+--    -> PixelXDimension Integer
+--    -> PixelYDimension Integer
+--    -- User information
+--    -> MakerNote String
+--    -> UserComment String
+--    -- Related file information
+--    -> RelatedSoundFile String
+--    -- Date and time
+--    -> DateTimeOriginal String
+--    -> DateTimeDigitized String
+--    -> SubSecTime String
+--    -> SubSecTimeOriginal String
+--    -> SubSecTimeDigitized String
+--    -- Picture-taking conditions
+--    -> ExposureTime Rational
+--    -> FNumber Rational
+--    -> ExposureProgram Int
+--    -> SpectralSensitivity String
+--    -> ISOSpeedRatings Int
+--    -> OECF Word32
+--    -> ShutterSpeedValue Rational
+--    -> ApertureValue Rational
+--    -> BrightnessValue Rational
+--    -> ExposureBiasValue Rational
+--    -> MaxApertureValue Rational
+--    -> SubjectDistance Rational
+--    -> MeteringMode Int
+--    -> LightSource Int
+--    -> Flash Int
+--    -> FocalLength Rational
+--    -> SubjectArea [Int]
+--    -> FlashEnergy Rational
+--    -> SpatialFrequencyResponse [Word8]
+--    -> FocalPlaneXResolution Rational
+--    -> FocalPlaneYResolution Rational
+--    -> FocalPlaneResolutionUnit Int
+--    -> SubjectLocation Int Int
+--    -> ExposureIndex Rational
+--    -> SensingMethod Int
+--    -> FileSource Word32
+--    -> SceneType Word32
+--    -> CFAPattern [Word8]
+--    -> CustomRenderer Int
+--    -> ExposureMode Int
+--    -> WhiteBalance Int
+--    -> DigitalZoomRatio Rational
+--    -> FocalLengthIn35mmFilm Int
+--    -> SceneCaptureType Int
+--    -> GainControl Rational
+--    -> Contrast Int
+--    -> Saturation Int
+--    -> Sharpness Int
+--    -> DeviceSettingsDescription [Word8]
+--    -> SubjectDistanceRange Int
+--    -- Other
+--    -> ImageUniqueID String
+    otherwise -> return $ Make "blah"
+  where
+    readString :: (String -> ExifAttribute) -> Parser ExifAttribute
+    readString ctor = (ctor . dropRightNulls . unpack) `liftM`
+      liftP (G.getLazyByteString (fromIntegral count))
+    dropRightNulls :: String -> String
+    dropRightNulls = takeWhile ((/=) '\NUL')
 
 logError :: ParserError -> String -> Parser ()
 logError err msg =
