@@ -17,6 +17,7 @@ import Data.Exif.Types
 import Data.Int (Int64)
 import Data.List (sortBy)
 import Data.Ord (comparing)
+import Data.Ratio ((%))
 import Data.Word (Word8, Word16, Word32)
 import Numeric (showHex)
 import Prelude hiding (log)
@@ -26,6 +27,8 @@ data ParserError
   | ParserError
   | InvalidExifTag Int64 Word16
   | InvalidExifType Int64 Word16
+  | InvalidDataTypeError Type String
+  | InvalidOffsetError Word32 String
   | UndefinedEndianness String
   | InvalidOffset
     deriving (Show)
@@ -187,21 +190,44 @@ readExifTag :: IFDField -> Parser ExifTag
 readExifTag (IFDField rawTag dataType count offset) =
   case rawTag of
     0x0100 -> case dataType of
-      Short -> makeShortTag ImageWidth
-      Long -> makeLongTag ImageWidth
+      Short -> toShortTag ImageWidth
+      Long -> toLongTag ImageWidth
+      _ -> invalidType "ImageWidth"
     0x0101 -> case dataType of
-      Short -> makeShortTag ImageLength
-      Long -> makeLongTag ImageLength
+      Short -> toShortTag ImageLength
+      Long -> toLongTag ImageLength
+      _ -> invalidType "ImageLength"
     0x0102 -> BitsPerSample `liftM` getShort `ap` getShort `ap` getShort
-    0x0103 -> Compression `liftM` getShort
-    -- -> PhotometricInterpretation Int
-    -- -> Orientation Int
+    0x0103 -> return $ Compression intOffset
+    0x0106 -> return $ PhotometricInterpretation $ case intOffset of
+      2 -> RGB
+      6 -> YCbCr
+      _ -> ReservedPhotometricInterpretation
+    0x0112 ->
+      if (between intOffset 1 8)
+        then return $ Orientation $ case intOffset of
+          1 -> ZeroethRowIsTopZeroethColumnIsLeft
+          2 -> ZeroethRowIsTopZeroethColumnIsRight
+          3 -> ZeroethRowIsBottomZeroethColumnIsRight
+          4 -> ZeroethRowIsBottomZeroethColumnIsLeft
+          5 -> ZeroethRowIsLeftZeroethColumnIsTop
+          6 -> ZeroethRowIsRightZeroethColumnIsTop
+          7 -> ZeroethRowIsRightZeroethColumnIsBottom
+          8 -> ZeroethRowIsLeftZeroethColumnIsBottom
+        else
+          throwError $ InvalidOffsetError offset "Orientation"
     -- -> SamplesPerPixel Int
     -- -> PlanarConfiguration Int
     -- -> YCbCrSubSampling Int Int
     -- -> YCbCrPositioning Int
-    -- -> XResolution Rational
-    -- -> YResolution Rational
+    0x011A -> do
+      num <- fromIntegral `liftM` getW32le
+      denom <- fromIntegral `liftM` getW32le
+      return $ XResolution (num % denom)
+    0x011B -> do
+      num <- fromIntegral `liftM` getW32le
+      denom <- fromIntegral `liftM` getW32le
+      return $ YResolution (num % denom)
     -- -> ResolutionUnit ResolutionUnit
     -- -- Recording offset
     -- -> StripOffsets Integer
@@ -223,6 +249,25 @@ readExifTag (IFDField rawTag dataType count offset) =
     0x0131 -> makeStringTag Software
     0x013B -> makeStringTag Artist
     0x8298 -> makeStringTag Copyright
+    -- -> SamplesPerPixel Int
+    -- -> PlanarConfiguration Int
+    -- -> YCbCrSubSampling Int Int
+    -- -> YCbCrPositioning Int
+    -- -> XResolution Rational
+    -- -> YResolution Rational
+    -- -> ResolutionUnit ResolutionUnit
+    -- -- Recording offset
+    -- -> StripOffsets Integer
+    -- -> RowsPerStrip Integer
+    -- -> StripByteCount [Integer]
+    -- -> JPEGInterchangeFormat Integer
+    -- -> JPEGInterchangeFormatLength Integer
+    -- -- Image data characteristics
+    -- -> TransferFunction [Int]
+    -- -> WhitePoint Rational Rational Rational
+    -- -> PrimaryChromaticities [Rational]
+    -- -> YCbCrCoefficients Rational Rational Rational
+    -- -> ReferenceBlackWhite [Rational]
     {-
     - Exif Attributes
     -}
@@ -295,6 +340,15 @@ readExifTag (IFDField rawTag dataType count offset) =
 
   where
 
+    between :: Ord a => a -> a -> a -> Bool
+    between n x y = n >= x && n <= y
+
+    intOffset :: Int
+    intOffset = fromIntegral offset
+
+    invalidType :: String -> Parser a
+    invalidType = throwError . InvalidDataTypeError dataType
+
     makeStringTag :: (String -> ExifTag) -> Parser ExifTag
     makeStringTag ctor = do
       bytestring <- liftP . G.getLazyByteString $ fromIntegral count
@@ -308,11 +362,17 @@ readExifTag (IFDField rawTag dataType count offset) =
       int <- fromIntegral `liftM` parser
       return $ ctor int
 
-    makeShortTag :: (Int -> ExifTag) -> Parser ExifTag
-    makeShortTag = makeIntTag getW16le
+    parseShortTag :: (Int -> ExifTag) -> Parser ExifTag
+    parseShortTag = makeIntTag getW16le
 
-    makeLongTag :: (Int -> ExifTag) -> Parser ExifTag
-    makeLongTag = makeIntTag getW32le
+    toShortTag :: (Int -> ExifTag) -> Parser ExifTag
+    toShortTag = makeIntTag (return offset)
+
+    parseLongTag :: (Int -> ExifTag) -> Parser ExifTag
+    parseLongTag = makeIntTag getW32le
+
+    toLongTag :: (Int -> ExifTag) -> Parser ExifTag
+    toLongTag = makeIntTag (return offset)
 
 logError :: ParserError -> String -> Parser ()
 logError err msg =

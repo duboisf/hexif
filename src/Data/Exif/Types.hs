@@ -121,8 +121,8 @@ data ExifTag
   | ImageLength Int
   | BitsPerSample Int Int Int
   | Compression Int
-  | PhotometricInterpretation Int
-  | Orientation Int
+  | PhotometricInterpretation PhotometricInterpretation
+  | Orientation Orientation
   | SamplesPerPixel Int
   | PlanarConfiguration Int
   | YCbCrSubSampling Int Int
@@ -223,6 +223,20 @@ data ExifTag
 data ResolutionUnit = Centimeters
                     | Inches
                       deriving Show
+data PhotometricInterpretation = RGB
+                               | YCbCr
+                               | ReservedPhotometricInterpretation
+                                 deriving Show
+
+data Orientation = ZeroethRowIsTopZeroethColumnIsLeft
+                 | ZeroethRowIsTopZeroethColumnIsRight
+                 | ZeroethRowIsBottomZeroethColumnIsRight
+                 | ZeroethRowIsBottomZeroethColumnIsLeft
+                 | ZeroethRowIsLeftZeroethColumnIsTop
+                 | ZeroethRowIsRightZeroethColumnIsTop
+                 | ZeroethRowIsRightZeroethColumnIsBottom
+                 | ZeroethRowIsLeftZeroethColumnIsBottom
+                   deriving Show
 
 -- data TIFFTag =
 --                -- Tags relating to image data structure
