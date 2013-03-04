@@ -20,6 +20,7 @@ do_build() {
     CABAL_OUTPUT=$(cabal build 2>&1)
     (( $? != 0 )) && color=1
     print "[0;3${color:-2}m${CABAL_OUTPUT}[0m"
+    print "Done."
 }
 
 do_build

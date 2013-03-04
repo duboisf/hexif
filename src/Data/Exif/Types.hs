@@ -126,7 +126,7 @@ data ExifTag
   | SamplesPerPixel Int
   | PlanarConfiguration Int
   | YCbCrSubSampling Int Int
-  | YCbCrPositioning Int
+  | YCbCrPositioning YCbCrPositioning
   | XResolution Rational
   | YResolution Rational
   | ResolutionUnit ResolutionUnit
@@ -220,9 +220,6 @@ data ExifTag
   | UnknownTag Word16
     deriving (Show)
 
-data ResolutionUnit = Centimeters
-                    | Inches
-                      deriving Show
 data PhotometricInterpretation = RGB
                                | YCbCr
                                | ReservedPhotometricInterpretation
@@ -237,6 +234,14 @@ data Orientation = ZeroethRowIsTopZeroethColumnIsLeft
                  | ZeroethRowIsRightZeroethColumnIsBottom
                  | ZeroethRowIsLeftZeroethColumnIsBottom
                    deriving Show
+
+data YCbCrPositioning = Centered
+                      | CoSited
+                        deriving Show
+
+data ResolutionUnit = Centimeters
+                    | Inches
+                      deriving Show
 
 -- data TIFFTag =
 --                -- Tags relating to image data structure

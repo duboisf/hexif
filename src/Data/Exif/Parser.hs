@@ -165,23 +165,20 @@ parseApp1 = do
 -- instead of being contained in the field definition.
 parseLongFieldValues :: TIFFHeader -> [IFDField] -> Parser [ExifTag]
 parseLongFieldValues header rawFields = do
-  -- filter to keep only the fields with values bigger than 4 bytes,
-  -- then order by the offset value, as we can't rewind the bytestream
-  let sortedFields = sortBy (comparing rifOffset) $ filter sizeBiggerThan4 rawFields
+  -- order by the offset value, as we can't rewind the bytestream
+  let sortedFields = sortBy (comparing rifOffset) rawFields
   let tiffOffset = thOffset header
   forM sortedFields $ \rawField -> do
     let valueOffset = tiffOffset + rifOffset rawField
     currentOffset <- fromIntegral `liftM` bytesRead'
-    unless (valueOffset == currentOffset) $
+    unless (valueOffset == currentOffset || not (sizeBiggerThan4 rawField)) $
       logError InvalidOffset $ concat [
           "expecting offset ", toHex valueOffset, ", got ", toHex currentOffset
         ]
-    logWithPosition "returning new field"
-    -- for now just skip the bytes to test
+    logWithPosition "before creating ExifTag"
     field <- readExifTag rawField
-    tell $ ["debug: read field: " ++ show field]
+    logWithPosition $ "read field: " ++ show field
     return field
-    -- liftP $ G.skip $ typeSize (rifType rawField) * rifCount rawField
   where
     sizeBiggerThan4 field = typeSize (rifType field) * rifCount field > 4
 
@@ -199,27 +196,27 @@ readExifTag (IFDField rawTag dataType count offset) =
       _ -> invalidType "ImageLength"
     0x0102 -> BitsPerSample `liftM` getShort `ap` getShort `ap` getShort
     0x0103 -> return $ Compression intOffset
-    0x0106 -> return $ PhotometricInterpretation $ case intOffset of
-      2 -> RGB
-      6 -> YCbCr
-      _ -> ReservedPhotometricInterpretation
-    0x0112 ->
-      if (between intOffset 1 8)
-        then return $ Orientation $ case intOffset of
-          1 -> ZeroethRowIsTopZeroethColumnIsLeft
-          2 -> ZeroethRowIsTopZeroethColumnIsRight
-          3 -> ZeroethRowIsBottomZeroethColumnIsRight
-          4 -> ZeroethRowIsBottomZeroethColumnIsLeft
-          5 -> ZeroethRowIsLeftZeroethColumnIsTop
-          6 -> ZeroethRowIsRightZeroethColumnIsTop
-          7 -> ZeroethRowIsRightZeroethColumnIsBottom
-          8 -> ZeroethRowIsLeftZeroethColumnIsBottom
-        else
-          throwError $ InvalidOffsetError offset "Orientation"
+    0x0106 -> PhotometricInterpretation `liftM` case intOffset of
+      2 -> return RGB
+      6 -> return YCbCr
+      _ -> invalidOffset "PhotometricInterpretation"
+    0x0112 -> Orientation `liftM` case intOffset of
+      1 -> return ZeroethRowIsTopZeroethColumnIsLeft
+      2 -> return ZeroethRowIsTopZeroethColumnIsRight
+      3 -> return ZeroethRowIsBottomZeroethColumnIsRight
+      4 -> return ZeroethRowIsBottomZeroethColumnIsLeft
+      5 -> return ZeroethRowIsLeftZeroethColumnIsTop
+      6 -> return ZeroethRowIsRightZeroethColumnIsTop
+      7 -> return ZeroethRowIsRightZeroethColumnIsBottom
+      8 -> return ZeroethRowIsLeftZeroethColumnIsBottom
+      _ -> throwError $ InvalidOffsetError offset "Orientation"
     -- -> SamplesPerPixel Int
     -- -> PlanarConfiguration Int
     -- -> YCbCrSubSampling Int Int
-    -- -> YCbCrPositioning Int
+    0x0213 -> YCbCrPositioning `liftM` case intOffset of
+      1 -> return Centered
+      2 -> return CoSited
+      _ -> throwError $ InvalidOffsetError offset "YCbCrPositioning"
     0x011A -> do
       num <- fromIntegral `liftM` getW32le
       denom <- fromIntegral `liftM` getW32le
@@ -228,7 +225,10 @@ readExifTag (IFDField rawTag dataType count offset) =
       num <- fromIntegral `liftM` getW32le
       denom <- fromIntegral `liftM` getW32le
       return $ YResolution (num % denom)
-    -- -> ResolutionUnit ResolutionUnit
+    0x0128 -> ResolutionUnit `liftM` case intOffset of
+      2 -> return Centimeters
+      3 -> return Inches
+      _ -> throwError $ InvalidOffsetError offset "ResolutionUnit"
     -- -- Recording offset
     -- -> StripOffsets Integer
     -- -> RowsPerStrip Integer
@@ -348,6 +348,9 @@ readExifTag (IFDField rawTag dataType count offset) =
 
     invalidType :: String -> Parser a
     invalidType = throwError . InvalidDataTypeError dataType
+
+    invalidOffset :: String -> Parser a
+    invalidOffset = throwError . InvalidOffsetError offset
 
     makeStringTag :: (String -> ExifTag) -> Parser ExifTag
     makeStringTag ctor = do
