@@ -52,7 +52,7 @@ getFilteredDirContents (Dir dir) = do
   case maybeEntries of
     Nothing -> return []
     Just files -> return $ map (dir </>) $ filterDirEntries files
-  
+
 partitionFileEntries :: [FilePath] -> IO ([Dir], [File])
 partitionFileEntries entries =
   part entries [] []
@@ -64,7 +64,7 @@ partitionFileEntries entries =
       if isDir
         then part entries (Dir entry : dirs) files
         else do
-          isFile <- doesFileExist entry 
+          isFile <- doesFileExist entry
           part entries dirs (if isFile then File entry : files else files)
 
 getPartitionedDirContents :: Dir -> IO ([Dir], [File])
@@ -80,7 +80,7 @@ getAllFilesRecursively dir =
     getFiles' (dir:dirs) files = do
       (newDirs, newFiles) <- getPartitionedDirContents dir
       getFiles' (dirs ++ newDirs) (files ++ newFiles)
-  
+
 -- for each file f:
 --   extract modification date modDate
 --   build destFolder from modDate (targetDir/year/month)
@@ -110,19 +110,19 @@ main = do
     doWork srcDir = do
       let appConfig = AppConfig (Dir srcDir) (Dir ".")
       files <- runApp getFiles appConfig
-      contents <- BSL.readFile $ let File file = head files in file
-      let result = parseExif contents
-      case result of
-        (Left err, logs) -> do
-          putStr "Got an error while parsing: " >> print err
-          printLogs logs
-          exitFailure
-        (Right (_, fields), logs) -> do
-          printLogs logs
-          forM_ (zip [1..] fields) $ \(n, field) -> do
-            printLine
-            putStrLn $ "Field " ++ show n
-            printField field
+      forM_ files $ \(File file) -> do
+--        putStrLn ("parsing file " ++ file)
+        contents <- BSL.readFile file
+        let result = parseExif contents
+        case result of
+          (Left err, logs) -> do
+            putStr "Got an error while parsing: " >> print err
+            printLogs logs
+          (Right (_, fields), logs) -> do
+            forM_ (zip [1..] fields) $ \(n, field) -> do
+              case field of
+                DateTime dateTime -> putStrLn $ (file ++ ": " ++ show field)
+                otherwise -> return ()
     printLogs :: [String] -> IO ()
     printLogs logs = do
       putStrLn "Parsing logs:"
@@ -132,7 +132,7 @@ main = do
 
     printField :: IFDField -> IO ()
     printField field =
-      putStrLn $ 
+      putStrLn $
         "Tag: " ++ show (word2Tag (rifTag field)) ++
         "\nType: " ++ show (rifType field) ++
         "\nCount: " ++ show (rifCount field) ++

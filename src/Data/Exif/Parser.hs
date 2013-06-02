@@ -5,7 +5,7 @@ module Data.Exif.Parser (
   , ParserResult
   ) where
 
-import Control.Monad (ap, forM, liftM, unless, void)
+import Control.Monad (ap, forM, liftM, unless, when, void)
 import Control.Monad.Writer.Lazy (runWriterT, WriterT, tell)
 import Control.Monad.Writer.Class (MonadWriter)
 import Control.Monad.Error (Error(..), ErrorT, lift, runErrorT, throwError)
@@ -89,6 +89,9 @@ getW32be = liftP G.getWord32be
 bytesRead' :: Parser Int64
 bytesRead' = liftP G.bytesRead
 
+skipBytes :: Int -> Parser ()
+skipBytes = liftP . G.skip
+
 log :: String -> Parser ()
 log x = tell [x]
 
@@ -133,9 +136,9 @@ parseSOI = satisfy_ "JPEG magic number" 0xFFD8 =<< getW16be
 
 -- Used to abstract result type so that when testing I don't need to change 15
 -- method signatures
-type TempResult = (TIFFHeader, [IFDField])
+type TempResult = (TIFFHeader, [ExifTag])
 
-parseApp1 :: Parser (TIFFHeader, [IFDField])
+parseApp1 :: Parser TempResult
 parseApp1 = do
   satisfy_ "APP1 marker" 0xFFE1 =<< getW16be
   logWithPosition "parsed APP1 marker"
@@ -149,7 +152,7 @@ parseApp1 = do
   -- Parse TIFF header
   tiffHeader <- parseTIFFHeader
   log $ "TIFF header offset: " ++ toDecimHex (thOffset tiffHeader)
-  liftP $ G.skip $ fromInteger $ toInteger $ thIFDOffset tiffHeader
+  skipBytes $ fromInteger $ toInteger $ thIFDOffset tiffHeader
   logWithPosition "skiped to ifd0 offset"
 
   -- Parse raw fields
@@ -157,8 +160,8 @@ parseApp1 = do
   let nbFields = length raw0thIFDFields
   log $ "finished parsing the 0th IFD, found " ++ show nbFields ++ " fields"
   log $ "next IFD offset: " ++ toHex nextIFDOffset
-  parseLongFieldValues tiffHeader raw0thIFDFields
-  return (tiffHeader, raw0thIFDFields)
+  fields <- parseLongFieldValues tiffHeader raw0thIFDFields
+  return (tiffHeader, fields)
 
 -- fields with values bigger than 4 bytes need special handling,
 -- since the actual values are offset farther down the bytestream
@@ -166,16 +169,23 @@ parseApp1 = do
 parseLongFieldValues :: TIFFHeader -> [IFDField] -> Parser [ExifTag]
 parseLongFieldValues header rawFields = do
   -- order by the offset value, as we can't rewind the bytestream
-  let sortedFields = sortBy (comparing rifOffset) rawFields
+  --let sortedFields = sortBy (comparing rifOffset) rawFields
   let tiffOffset = thOffset header
-  forM sortedFields $ \rawField -> do
+  forM rawFields $ \rawField -> do
+    logWithPosition ("processing tag " ++ toHex (rifTag rawField))
     let valueOffset = tiffOffset + rifOffset rawField
+    currentOffset <- fromIntegral `liftM` bytesRead'
+    logWithPosition ("need: " ++ toHex valueOffset)
+    when (sizeBiggerThan4 rawField) $ do
+      let skipCount = fromInteger . toInteger $ (valueOffset - currentOffset)
+      logWithPosition ("skipping " ++ show skipCount)
+      skipBytes skipCount
+      logPosition
     currentOffset <- fromIntegral `liftM` bytesRead'
     unless (valueOffset == currentOffset || not (sizeBiggerThan4 rawField)) $
       logError InvalidOffset $ concat [
           "expecting offset ", toHex valueOffset, ", got ", toHex currentOffset
         ]
-    logWithPosition "before creating ExifTag"
     field <- readExifTag rawField
     logWithPosition $ "read field: " ++ show field
     return field

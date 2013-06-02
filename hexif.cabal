@@ -1,12 +1,12 @@
 name:                hexif
 version:             0.1.0.0
--- synopsis:            
--- description:         
+-- synopsis:
+-- description:
 license:             BSD3
 license-file:        LICENSE
 author:              Frederick Bernard Dubois
 maintainer:          fred.dubois@gmail.com
--- copyright:           
+-- copyright:
 category:            Utility
 build-type:          Simple
 cabal-version:       >=1.8

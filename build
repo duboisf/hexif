@@ -1,5 +1,8 @@
 #!/usr/bin/zsh
 
+local exec_task=
+[[ -n "$@" ]] && exec_task=1
+
 which inotifywait > /dev/null 2>&1
 if (( $? != 0 )); then
     cat >&2 <<-EOF
@@ -18,16 +21,28 @@ do_build() {
     print "[0;33mInvoking cabal build...[0m"
     local color
     CABAL_OUTPUT=$(cabal build 2>&1)
-    (( $? != 0 )) && color=1
+    local cabal_exit_code=$?
+    (( $cabal_exit_code != 0 )) && color=1
     print "[0;3${color:-2}m${CABAL_OUTPUT}[0m"
     print "Done."
+    return $cabal_exit_code
 }
 
-do_build
+do_work() {
+    do_build
+    if (( $? == 0 )); then
+        if (( $exec_task == 1 )); then
+            print "Executing: $@"
+            $@
+        fi
+    fi
+}
+
+do_work "$@"
 
 inotifywait -r src -m -q -e close_write | while read line; do
     if [[ $line == *.hs ]]; then
-        do_build
+    do_work "$@"
     fi
 done
 
