@@ -30,7 +30,7 @@ data ParserError
   | InvalidExifTag Int64 Word16
   | InvalidExifType Int64 Word16
   | InvalidDataTypeError Type String
-  | InvalidDateFormat
+  | InvalidDateFormat String
   | InvalidOffsetError Word32 String
   | UndefinedEndianness String
   | InvalidOffset
@@ -367,10 +367,10 @@ readExifTag (IFDField rawTag dataType count offset) =
 
     makeDateTimeTag :: Parser ExifTag
     makeDateTimeTag = do
-      rawDateTime <- liftP . G.getLazyByteString $ fromIntegral count
-      case parseTime' (unpack rawDateTime) of
+      rawDateTime <- (dropRightNulls . unpack) `liftM` (liftP . G.getLazyByteString $ fromIntegral count)
+      case parseTime' rawDateTime of
         Just dateTime -> return $ DateTime dateTime
-        otherwise -> throwError InvalidDateFormat
+        otherwise -> throwError $ InvalidDateFormat rawDateTime
       where
         parseTime' :: String -> Maybe LocalTime
         parseTime' =

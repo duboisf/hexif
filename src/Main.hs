@@ -116,7 +116,8 @@ main = do
         let result = parseExif contents
         case result of
           (Left err, logs) -> do
-            putStr "Got an error while parsing: " >> print err
+            putStr (file ++ ": Got an error while parsing: ")
+            print err
             printLogs logs
           (Right (_, fields), logs) -> do
             forM_ (zip [1..] fields) $ \(n, field) -> do
