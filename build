@@ -1,6 +1,6 @@
 #!/usr/bin/zsh
 
-local exec_task=
+local exec_task=0
 [[ -n "$@" ]] && exec_task=1
 
 which inotifywait > /dev/null 2>&1

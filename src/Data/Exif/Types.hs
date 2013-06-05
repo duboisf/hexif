@@ -1,6 +1,7 @@
 module Data.Exif.Types where
 
 import Data.Ratio (Ratio)
+import Data.Time.LocalTime (LocalTime)
 import Data.Word (Word8, Word16, Word32)
 
 data Endianness = LittleEndian | BigEndian deriving (Show)
@@ -143,7 +144,7 @@ data ExifTag
   | YCbCrCoefficients Rational Rational Rational
   | ReferenceBlackWhite [Rational]
   -- Other tags
-  | DateTime String
+  | DateTime LocalTime
   | ImageDescription String
   | Make String
   | Model String

@@ -23,6 +23,8 @@ executable hexif
     , directory
     , filepath
     , mtl
+    , old-locale
     , text
+    , time
 
 -- vim: et sts=4 ts=4 sw=4

@@ -18,9 +18,11 @@ import Data.Int (Int64)
 import Data.List (sortBy)
 import Data.Ord (comparing)
 import Data.Ratio ((%))
+import Data.Time (LocalTime, parseTime)
 import Data.Word (Word8, Word16, Word32)
 import Numeric (showHex)
 import Prelude hiding (log)
+import System.Locale (defaultTimeLocale)
 
 data ParserError
   = Unsatisfied String
@@ -28,6 +30,7 @@ data ParserError
   | InvalidExifTag Int64 Word16
   | InvalidExifType Int64 Word16
   | InvalidDataTypeError Type String
+  | InvalidDateFormat
   | InvalidOffsetError Word32 String
   | UndefinedEndianness String
   | InvalidOffset
@@ -252,7 +255,7 @@ readExifTag (IFDField rawTag dataType count offset) =
     -- -> YCbCrCoefficients Rational Rational Rational
     -- -> ReferenceBlackWhite [Rational]
     -- Other tags
-    0x0132 -> makeStringTag DateTime
+    0x0132 -> makeDateTimeTag
     -- -> ImageDescription String
     0x010F -> makeStringTag Make
     0x0110 -> makeStringTag Model
@@ -361,6 +364,17 @@ readExifTag (IFDField rawTag dataType count offset) =
 
     invalidOffset :: String -> Parser a
     invalidOffset = throwError . InvalidOffsetError offset
+
+    makeDateTimeTag :: Parser ExifTag
+    makeDateTimeTag = do
+      rawDateTime <- liftP . G.getLazyByteString $ fromIntegral count
+      case parseTime' (unpack rawDateTime) of
+        Just dateTime -> return $ DateTime dateTime
+        otherwise -> throwError InvalidDateFormat
+      where
+        parseTime' :: String -> Maybe LocalTime
+        parseTime' =
+          parseTime defaultTimeLocale "%Y:%m:%d %H:%M:%S"
 
     makeStringTag :: (String -> ExifTag) -> Parser ExifTag
     makeStringTag ctor = do
