@@ -6,9 +6,6 @@ import Control.Exception (handle, SomeException)
 import Control.Monad.Reader
 import qualified Data.ByteString.Lazy as BSL
 import Data.Exif (parseExif)
-import Data.Exif.Types
-import Data.Char (toUpper)
-import Numeric (showHex)
 import System.Directory (doesDirectoryExist, doesFileExist, getDirectoryContents)
 import System.Environment (getArgs, getProgName)
 import System.Exit (exitFailure)
@@ -119,11 +116,11 @@ main = do
             putStr (file ++ ": Got an error while parsing: ")
             print err
             printLogs logs
-          (Right (_, fields), logs) -> do
+          (Right (_, fields), _) -> do
             forM_ (zip [1..] fields) $ \(n, field) -> do
-              case field of
-                DateTime dateTime -> putStrLn $ (file ++ ": " ++ show field)
-                otherwise -> return ()
+              printLine
+              print n
+              print field
     printLogs :: [String] -> IO ()
     printLogs logs = do
       putStrLn "Parsing logs:"
@@ -131,10 +128,10 @@ main = do
 
     printLine = putStrLn $ replicate 20 '-'
 
-    printField :: IFDField -> IO ()
-    printField field =
-      putStrLn $
-        "Tag: " ++ show (word2Tag (rifTag field)) ++
-        "\nType: " ++ show (rifType field) ++
-        "\nCount: " ++ show (rifCount field) ++
-        "\nOffset: 0x" ++ map toUpper (showHex (rifOffset field) "")
+--    printField :: IFDField -> IO ()
+--    printField field =
+--      putStrLn $
+--        "Tag: " ++ show (word2Tag (rifTag field)) ++
+--        "\nType: " ++ show (rifType field) ++
+--        "\nCount: " ++ show (rifCount field) ++
+--        "\nOffset: 0x" ++ map toUpper (showHex (rifOffset field) "")

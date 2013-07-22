@@ -15,11 +15,9 @@ import Data.ByteString.Lazy.Char8 (ByteString, unpack)
 import Data.Char (toUpper)
 import Data.Exif.Types
 import Data.Int (Int64)
-import Data.List (sortBy)
-import Data.Ord (comparing)
 import Data.Ratio ((%))
 import Data.Time (LocalTime, parseTime)
-import Data.Word (Word8, Word16, Word32)
+import Data.Word (Word16, Word32)
 import Numeric (showHex)
 import Prelude hiding (log)
 import System.Locale (defaultTimeLocale)
@@ -68,11 +66,11 @@ satisfy_ desc expected actual =
 liftP :: G.Get a -> Parser a
 liftP = Parser . lift . lift
 
-getW8 :: Parser Word8
-getW8 = liftP G.getWord8
+--getW8 :: Parser Word8
+--getW8 = liftP G.getWord8
 
-getByte :: Parser Int
-getByte = fromIntegral `liftM` getW8
+--getByte :: Parser Int
+--getByte = fromIntegral `liftM` getW8
 
 getW16be :: Parser Word16
 getW16be = liftP G.getWord16be
@@ -145,7 +143,7 @@ parseApp1 :: Parser TempResult
 parseApp1 = do
   satisfy_ "APP1 marker" 0xFFE1 =<< getW16be
   logWithPosition "parsed APP1 marker"
-  app1Length <- getW16le
+  _ <- getW16le
   logWithPosition "parsed app1 length"
   satisfy_ "Exif identifier code" 0x45786966 =<< getW32be
   logWithPosition "parsed exif identifier code"
@@ -353,9 +351,6 @@ readExifTag (IFDField rawTag dataType count offset) =
 
   where
 
-    between :: Ord a => a -> a -> a -> Bool
-    between n x y = n >= x && n <= y
-
     intOffset :: Int
     intOffset = fromIntegral offset
 
@@ -370,7 +365,7 @@ readExifTag (IFDField rawTag dataType count offset) =
       rawDateTime <- (dropRightNulls . unpack) `liftM` (liftP . G.getLazyByteString $ fromIntegral count)
       case parseTime' rawDateTime of
         Just dateTime -> return $ DateTime dateTime
-        otherwise -> throwError $ InvalidDateFormat rawDateTime
+        _ -> throwError $ InvalidDateFormat rawDateTime
       where
         parseTime' :: String -> Maybe LocalTime
         parseTime' =
@@ -389,14 +384,8 @@ readExifTag (IFDField rawTag dataType count offset) =
       int <- fromIntegral `liftM` parser
       return $ ctor int
 
-    parseShortTag :: (Int -> ExifTag) -> Parser ExifTag
-    parseShortTag = makeIntTag getW16le
-
     toShortTag :: (Int -> ExifTag) -> Parser ExifTag
     toShortTag = makeIntTag (return offset)
-
-    parseLongTag :: (Int -> ExifTag) -> Parser ExifTag
-    parseLongTag = makeIntTag getW32le
 
     toLongTag :: (Int -> ExifTag) -> Parser ExifTag
     toLongTag = makeIntTag (return offset)
